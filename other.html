@@ -16,7 +16,7 @@
 #todo h2{font-size:13px;margin:0 0 8px}#todo ul{padding-left:18px;margin:0}#todo li{margin:5px 0;overflow-wrap:anywhere}
 [hidden]{display:none!important}@keyframes float{50%{transform:translateY(-4px) rotate(1deg)}}
 </style>
-<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" hidden><div id="fallback">🐻</div><div id="status"></div><div id="todo" hidden><h2>공개 TO DO</h2><ul></ul></div></div>
+<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" draggable="false" hidden><div id="fallback">🐻</div><div id="status"></div><div id="todo" hidden><h2>공개 TO DO</h2><ul></ul></div></div>
 <script>
 window.pet.onRemote(data=>{
  const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&data.avatar.startsWith('data:image/png;base64,');
@@ -31,23 +31,32 @@ window.pet.onRemote(data=>{
 });
 const other=document.querySelector('#other');
 let last=null,moved=false;
+document.addEventListener('dragstart',event=>event.preventDefault());
 function interactive(target){return !!target.closest('#avatar:not([hidden]),#fallback:not([hidden]),#status,#todo:not([hidden])')}
 other.addEventListener('pointermove',event=>{
  window.pet.remoteInteractive(interactive(event.target));
  if(!last)return;
  const dx=event.screenX-last.x,dy=event.screenY-last.y;
- if(Math.abs(dx)+Math.abs(dy)>2){moved=true;window.pet.dragRemote(dx,dy)}
+ if(Math.abs(dx)+Math.abs(dy)>6){moved=true;window.pet.dragRemote(dx,dy)}
 });
 other.addEventListener('pointerdown',event=>{
  moved=false;
  if(event.button!==0||!event.target.closest('#avatar:not([hidden]),#fallback:not([hidden]),#status'))return;
  last={x:event.screenX,y:event.screenY};other.setPointerCapture(event.pointerId);window.pet.remoteDragState(true);
 });
-function endDrag(){if(last){last=null;window.pet.remoteDragState(false)}}
+let clicks=0,clickTimer;
+function endDrag(event){
+ if(!last)return;
+ const wasClick=!moved&&event.type==='pointerup';
+ last=null;window.pet.remoteDragState(false);
+ if(wasClick){
+  const todo=document.querySelector('#todo');todo.hidden=!todo.hidden;
+  clicks++;clearTimeout(clickTimer);clickTimer=setTimeout(()=>clicks=0,800);
+  if(clicks>=3){clicks=0;window.pet.pokeFriend()}
+ }
+}
 other.addEventListener('pointerup',endDrag);
 other.addEventListener('pointercancel',endDrag);
 other.addEventListener('pointerleave',()=>{if(!last)window.pet.remoteInteractive(false)});
-let clicks=0,clickTimer;
-other.addEventListener('click',event=>{if(moved||!interactive(event.target))return;const todo=document.querySelector('#todo');todo.hidden=!todo.hidden;window.pet.remoteInteractive(interactive(event.target));if(event.target.closest('#avatar,#fallback,#status')){clicks++;clearTimeout(clickTimer);clickTimer=setTimeout(()=>clicks=0,800);if(clicks>=3){clicks=0;window.pet.pokeFriend()}}});
 window.pet.onReaction(value=>{const name=value==='glow'?'glowing':value==='highfive'?'highfive':'shaking';other.classList.remove(name);void other.offsetWidth;other.classList.add(name);setTimeout(()=>other.classList.remove(name),1200)});
 </script></html>

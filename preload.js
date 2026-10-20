@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('pet', {
   historyMonth: (year, month) => ipcRenderer.invoke('history-month', year, month),
   openHistory: () => ipcRenderer.send('open-history'),
   checkUpdate: () => ipcRenderer.invoke('check-update'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
   openRelease: () => ipcRenderer.send('open-release'),
   chooseImage: () => ipcRenderer.invoke('choose-image'),
   addPoses: () => ipcRenderer.invoke('add-poses'),

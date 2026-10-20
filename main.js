@@ -2,7 +2,10 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, scr
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
+const { spawn, execFile } = require('node:child_process');
+const { pipeline } = require('node:stream/promises');
+const { Readable } = require('node:stream');
 const { step } = require('./motion');
 const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
@@ -38,6 +41,7 @@ const remoteWindows = new Map();
 const meeting = new Set();
 const lastHighfive = new Map();
 const RELEASE_URL = 'https://github.com/kssemy/deskbuddy-pet/releases/latest';
+const RELEASE_API = 'https://api.github.com/repos/kssemy/deskbuddy-pet/releases/latest';
 const REMOTE_URL = 'https://tgyfscvjnkaiykyfyzcc.supabase.co/rest/v1';
 const REMOTE_KEY = 'sb_publishable_4bdFjW6A7ahg9AaaV8AetQ_KEFbNYvw';
 const today = () => {
@@ -133,8 +137,17 @@ function movePet() {
 }
 function moveRemotePets() {
   const b = envelope(workAreas, FRIEND_VISUAL);
+  const cursor = screen.getCursorScreenPoint();
   for (const item of remoteWindows.values()) {
-    if (item.window.isDestroyed() || item.pinned || item.dragging || item.hovered) continue;
+    if (item.window.isDestroyed()) continue;
+    const bounds = item.window.getBounds();
+    const overFigure = cursor.x >= bounds.x + FRIEND_VISUAL.left && cursor.x <= bounds.x + FRIEND_VISUAL.right &&
+      cursor.y >= bounds.y + FRIEND_VISUAL.top && cursor.y <= bounds.y + FRIEND_VISUAL.bottom;
+    if (item.hovered !== overFigure && !item.dragging) {
+      item.hovered = overFigure;
+      item.window.setIgnoreMouseEvents(!overFigure, { forward: true });
+    }
+    if (item.pinned || item.dragging || item.hovered) continue;
     [item.x, item.vx] = step(item.x, item.vx, b.minX, b.maxX);
     [item.y, item.vy] = step(item.y, item.vy, b.minY, b.maxY);
     const fitted = fitToDisplays(item.x, item.y, workAreas, FRIEND_VISUAL);
@@ -227,6 +240,63 @@ function syncRemote() {
   remoteSyncQueue = remoteSyncQueue.then(sendRemote, sendRemote);
   return remoteSyncQueue;
 }
+async function latestRelease() {
+  const response = await fetch(RELEASE_API, { headers: { 'User-Agent': 'DeskBuddy' }, signal: AbortSignal.timeout(8000) });
+  if (!response.ok) throw new Error('GitHub 응답 오류');
+  const release = await response.json();
+  const latest = String(release.tag_name || '').replace(/^v/, '');
+  if (!/^\d+\.\d+\.\d+$/.test(latest)) throw new Error('버전 정보를 읽을 수 없어요.');
+  const current = app.getVersion();
+  return { current, latest, update: latest.localeCompare(current, undefined, { numeric: true }) > 0,
+    asset: release.assets?.find(asset => asset.name === `DeskBuddy-Windows-${latest}.zip`) };
+}
+let installingUpdate = false;
+async function installUpdate(release) {
+  if (installingUpdate || !release.update || !release.asset) return;
+  installingUpdate = true;
+  try {
+    const folder = path.join(app.getPath('userData'), 'updates', `v${release.latest}`);
+    const exe = path.join(folder, `DeskBuddy-Windows-${release.latest}`, 'DeskBuddy.exe');
+    if (!fs.existsSync(exe)) {
+      fs.mkdirSync(folder, { recursive: true });
+      const zip = path.join(folder, 'download.zip');
+      const response = await fetch(release.asset.browser_download_url);
+      if (!response.ok || !response.body) throw new Error('다운로드에 실패했어요.');
+      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(zip));
+      if (fs.statSync(zip).size !== release.asset.size) throw new Error('다운로드가 끝까지 완료되지 않았어요.');
+      if (release.asset.digest?.startsWith('sha256:')) {
+        const hash = createHash('sha256');
+        for await (const chunk of fs.createReadStream(zip)) hash.update(chunk);
+        if (`sha256:${hash.digest('hex')}` !== release.asset.digest) throw new Error('다운로드 파일을 확인할 수 없어요.');
+      }
+      const quote = value => `'${value.replace(/'/g, "''")}'`;
+      await new Promise((resolve, reject) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        `Expand-Archive -LiteralPath ${quote(zip)} -DestinationPath ${quote(folder)} -Force`],
+      { windowsHide: true }, error => error ? reject(error) : resolve()));
+      fs.rmSync(zip, { force: true });
+    }
+    if (!fs.existsSync(exe)) throw new Error('새 버전 실행 파일을 찾을 수 없어요.');
+    const installed = JSON.parse(fs.readFileSync(path.join(path.dirname(exe), 'resources', 'app', 'package.json'), 'utf8'));
+    if (installed.version !== release.latest) throw new Error('다운로드한 버전이 일치하지 않아요.');
+    app.once('will-quit', () => spawn(exe, [], { cwd: path.dirname(exe), detached: true, stdio: 'ignore', windowsHide: true }).unref());
+    app.quit();
+  } catch (error) {
+    await dialog.showMessageBox({ type: 'error', message: '업데이트하지 못했어요.', detail: error.message, buttons: ['확인'] });
+  } finally { installingUpdate = false; }
+}
+async function offerStartupUpdate() {
+  if (path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe') return;
+  try {
+    const release = await latestRelease();
+    if (!release.update || !release.asset) return;
+    const cachedExe = path.join(app.getPath('userData'), 'updates', `v${release.latest}`,
+      `DeskBuddy-Windows-${release.latest}`, 'DeskBuddy.exe');
+    if (fs.existsSync(cachedExe)) { await installUpdate(release); return; }
+    const { response } = await dialog.showMessageBox({ type: 'info', message: `DeskBuddy ${release.latest} 버전이 있어요.`,
+      detail: '다운로드가 끝나면 새 버전으로 다시 열립니다.', buttons: ['업데이트 후 실행', '나중에'], defaultId: 0, cancelId: 1 });
+    if (response === 0) await installUpdate(release);
+  } catch { /* 인터넷이 없어도 기존 앱은 그대로 사용합니다. */ }
+}
 async function sendRemote() {
   if (!remoteSession) return;
   try {
@@ -316,7 +386,6 @@ app.whenReady().then(() => {
     frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false, hasShadow: false });
   petWindow.webContents.on('context-menu', () => {
     Menu.buildFromTemplate([
-      { label: '체크리스트 열기', click: () => togglePanel('tasks') },
       { label: '설정', click: () => togglePanel('settings') },
       { label: '종료', click: () => app.quit() }
     ]).popup({ window: petWindow });
@@ -326,6 +395,7 @@ app.whenReady().then(() => {
   movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 30);
   remoteTimer = setInterval(syncRemote, 10000);
   if (remoteSession) syncRemote();
+  void offerStartupUpdate();
 });
 
 ipcMain.handle('load', () => publicData());
@@ -344,16 +414,13 @@ ipcMain.handle('history-month', (_event, year, month) => {
 });
 ipcMain.handle('check-update', async () => {
   try {
-    const response = await fetch('https://api.github.com/repos/kssemy/deskbuddy-pet/releases/latest', {
-      headers: { 'User-Agent': 'DeskBuddy' }, signal: AbortSignal.timeout(8000)
-    });
-    if (!response.ok) throw new Error('GitHub 응답 오류');
-    const release = await response.json();
-    const latest = String(release.tag_name || '').replace(/^v/, '');
-    const current = app.getVersion();
-    if (!/^\d+\.\d+\.\d+$/.test(latest)) throw new Error('버전 정보를 읽을 수 없어요.');
-    return { current, latest, update: latest.localeCompare(current, undefined, { numeric: true }) > 0 };
+    const { current, latest, update } = await latestRelease();
+    return { current, latest, update };
   } catch { throw new Error('최신 버전을 확인할 수 없어요. 인터넷 연결을 확인해 주세요.'); }
+});
+ipcMain.handle('install-update', async () => {
+  const release = await latestRelease();
+  if (release.update) await installUpdate(release);
 });
 ipcMain.on('open-release', () => { void shell.openExternal(RELEASE_URL); });
 ipcMain.handle('choose-image', async () => {
