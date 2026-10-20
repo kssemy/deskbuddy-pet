@@ -1,0 +1,24 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('pet', {
+  load: () => ipcRenderer.invoke('load'),
+  chooseImage: () => ipcRenderer.invoke('choose-image'),
+  addPoses: () => ipcRenderer.invoke('add-poses'),
+  removePose: name => ipcRenderer.invoke('remove-pose', name),
+  resizePanel: height => ipcRenderer.send('resize-panel', height),
+  setTodoHeight: height => ipcRenderer.invoke('set-todo-height', height),
+  connectPet: (name, pin, register) => ipcRenderer.invoke('connect-pet', name, pin, register),
+  disconnectPet: () => ipcRenderer.invoke('disconnect-pet'),
+  onRemote: callback => ipcRenderer.on('remote-update', (_event, data) => callback(data)),
+  setSize: value => ipcRenderer.invoke('set-size', value),
+  setOpacity: value => ipcRenderer.invoke('set-opacity', value),
+  setTasks: tasks => ipcRenderer.invoke('set-tasks', tasks),
+  setMemos: memos => ipcRenderer.invoke('set-memos', memos),
+  setSettings: settings => ipcRenderer.invoke('set-settings', settings),
+  setSpeech: (text, temporary) => ipcRenderer.invoke('set-speech', text, temporary),
+  togglePanel: () => ipcRenderer.send('toggle-panel'),
+  toggleChat: () => ipcRenderer.send('toggle-chat'),
+  drag: (dx, dy) => ipcRenderer.send('drag-pet', dx, dy),
+  hover: value => ipcRenderer.send('hover-pet', value),
+  onChange: callback => ipcRenderer.on('data-changed', (_event, data) => callback(data))
+});

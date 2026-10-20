@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>일하는 캐릭터</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 240px; height: 250px; overflow: hidden; background: transparent; }
+  body { display: grid; place-items: center; user-select: none; }
+  #pet { position: relative; width: 230px; height: 240px; display: grid; place-items: end center; cursor: grab; touch-action: none; }
+  #pet:active { cursor: grabbing; }
+  #figure { width: var(--size, 130px); height: var(--size, 130px); margin-bottom: 28px; object-fit: contain;
+    pointer-events: none; animation: float 2s ease-in-out infinite; }
+  #fallback { font-size: var(--size, 130px); line-height: 1; margin-bottom: 28px; pointer-events: none;
+    animation: float 2s ease-in-out infinite; }
+  #speech { position: absolute; bottom: calc(var(--size, 130px) + 39px); left: 50%; transform: translateX(-50%); opacity: var(--bubble-opacity, 1);
+    width: max-content; max-width: 170px; max-height: 55px; overflow: hidden;
+    padding: 6px 8px; border: 0; border-radius: 12px; background: #fffaf5;
+    color: #4f3b31; font: 12px/1.3 sans-serif; overflow-wrap: anywhere; pointer-events: none; }
+  #speech.temporary { background: #ffe5bf; }
+  #countdown { margin-left: 5px; font-weight: 700; color: #b4513d; }
+  #chatButton { position: absolute; bottom: calc(var(--size, 130px) + 1px); left: calc(50% + var(--size, 130px) / 2 + 3px); width: 24px; height: 22px;
+    border: 0; border-radius: 12px; background: #fffaf5; opacity: var(--bubble-opacity, 1); color: #4f3b31;
+    font: bold 12px sans-serif; line-height: 14px; cursor: pointer; }
+  #workStatus { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; color: #4f3b31;
+    font: 11px/1.3 sans-serif; pointer-events: none; }
+  [hidden] { display: none !important; }
+  @keyframes float { 50% { transform: translateY(-4px) rotate(1deg); } }
+</style>
+<div id="pet" aria-label="캐릭터: 클릭하면 체크리스트">
+  <div id="speech" hidden><span id="speechText"></span><span id="countdown" hidden></span></div>
+  <button id="chatButton" type="button" aria-label="한마디 입력">···</button>
+  <img id="figure" alt="내 캐릭터" hidden>
+  <div id="fallback">🐻</div>
+  <div id="workStatus"></div>
+</div>
+<script>
+  const petElement = document.querySelector('#pet');
+  const image = document.querySelector('#figure');
+  const fallback = document.querySelector('#fallback');
+  const speech = document.querySelector('#speech');
+  const speechText = document.querySelector('#speechText');
+  const countdown = document.querySelector('#countdown');
+  const chatButton = document.querySelector('#chatButton');
+  const status = document.querySelector('#workStatus');
+  let baseImage = null, poses = [], poseIndex = 0;
+  let expiresAt = 0;
+  function updateCountdown() {
+    const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    countdown.hidden = !seconds;
+    countdown.textContent = seconds ? String(seconds) : '';
+    if (expiresAt && !seconds) speech.hidden = true;
+  }
+  function render(data) {
+    document.documentElement.style.setProperty('--size', `${data.size}px`);
+    document.documentElement.style.setProperty('--bubble-opacity', Number(data.bubbleOpacity ?? 100) / 100);
+    baseImage = data.image;
+    poses = (data.poses || []).map(pose => pose.url);
+    image.hidden = !baseImage;
+    fallback.hidden = !!baseImage;
+    if (baseImage && image.src !== baseImage) image.src = baseImage;
+    speechText.textContent = data.speech || '';
+    speech.hidden = !data.speech;
+    expiresAt = data.speechExpiresAt || 0;
+    speech.classList.toggle('temporary', !!expiresAt);
+    updateCountdown();
+    status.textContent = data.workStatus || '';
+  }
+  setInterval(updateCountdown, 200);
+  setInterval(() => {
+    if (!baseImage || !poses.length) return;
+    image.src = poses[poseIndex++ % poses.length];
+    setTimeout(() => { if (baseImage) image.src = baseImage; }, 1800);
+  }, 8000);
+  window.pet.load().then(render);
+  window.pet.onChange(render);
+  petElement.addEventListener('pointerenter', () => window.pet.hover(true));
+  petElement.addEventListener('pointerleave', () => window.pet.hover(false));
+  let last, moved;
+  petElement.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    last = { x: event.screenX, y: event.screenY };
+    moved = false;
+    window.pet.hover(true);
+  });
+  petElement.addEventListener('pointermove', event => {
+    if (!last) return;
+    const dx = event.screenX - last.x, dy = event.screenY - last.y;
+    if (Math.abs(dx) + Math.abs(dy) > 6) {
+      if (!moved) petElement.setPointerCapture(event.pointerId);
+      moved = true;
+      window.pet.drag(dx, dy);
+      last = { x: event.screenX, y: event.screenY };
+    }
+  });
+  petElement.addEventListener('pointerup', () => { last = null; });
+  petElement.addEventListener('click', () => { if (!moved) window.pet.togglePanel(); });
+  chatButton.addEventListener('pointerdown', event => event.stopPropagation());
+  chatButton.addEventListener('click', event => {
+    event.stopPropagation();
+    window.pet.toggleChat();
+  });
+</script>
+</html>
