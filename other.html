@@ -2,15 +2,19 @@
 <style>
 *{box-sizing:border-box}html,body{margin:0;width:190px;height:400px;overflow:hidden;background:transparent;color:#4f3b31;font:11px/1.3 sans-serif;user-select:none}
 #other{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:5px;cursor:default}
+#avatar,#fallback,#status{cursor:grab}
 #speech{max-width:170px;max-height:65px;padding:5px 7px;border-radius:10px;background:#fffaf5;overflow:hidden;overflow-wrap:anywhere}
 #avatar{width:120px;height:120px;object-fit:contain;animation:float 2s ease-in-out infinite}
+#other.glowing #avatar,#other.glowing #fallback{filter:drop-shadow(0 0 10px #ffd45d) drop-shadow(0 0 19px #ffc238)}
+#other.shaking #avatar,#other.shaking #fallback{animation:shake .12s linear 8}
+@keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 #fallback{font-size:100px;line-height:1;animation:float 2s ease-in-out infinite}
 #status{max-width:185px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #todo{position:absolute;left:8px;right:8px;bottom:calc(151px + var(--speech-height,0px));max-height:150px;padding:10px;border-radius:14px;background:#fffaf5;overflow:auto}
 #todo h2{font-size:13px;margin:0 0 8px}#todo ul{padding-left:18px;margin:0}#todo li{margin:5px 0;overflow-wrap:anywhere}
 [hidden]{display:none!important}@keyframes float{50%{transform:translateY(-4px) rotate(1deg)}}
 </style>
-<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" hidden><div id="fallback">🐻</div><div id="status"></div><div id="todo" hidden><h2>공개 TO DO · 더블클릭해서 닫기</h2><ul></ul></div></div>
+<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" hidden><div id="fallback">🐻</div><div id="status"></div><div id="todo" hidden><h2>공개 TO DO</h2><ul></ul></div></div>
 <script>
 window.pet.onRemote(data=>{
  const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&data.avatar.startsWith('data:image/png;base64,');
@@ -20,8 +24,28 @@ window.pet.onRemote(data=>{
  const speech=document.querySelector('#speech');speech.textContent=data.speech||'';speech.hidden=!data.speech;
  document.documentElement.style.setProperty('--speech-height',speech.hidden?'0px':(speech.offsetHeight+6)+'px');
  const list=document.querySelector('#todo ul');list.replaceChildren();
- for(const task of Array.isArray(data.public_tasks)?data.public_tasks:[]){const li=document.createElement('li');li.textContent=(task.done?'✓ ':'□ ')+String(task.text||'');list.append(li)}
+ for(const task of Array.isArray(data.public_tasks)?data.public_tasks:[]){if(task.type)continue;const li=document.createElement('li');li.textContent=(task.done?'✓ ':'□ ')+String(task.text||'');list.append(li)}
  if(!list.children.length){const li=document.createElement('li');li.textContent='공개된 할 일이 없어요.';list.append(li)}
 });
-document.querySelector('#other').addEventListener('dblclick',()=>{const todo=document.querySelector('#todo');todo.hidden=!todo.hidden});
+const other=document.querySelector('#other');
+let last=null,moved=false;
+function interactive(target){return !!target.closest('#avatar:not([hidden]),#fallback:not([hidden]),#status,#todo:not([hidden])')}
+other.addEventListener('pointermove',event=>{
+ window.pet.remoteInteractive(interactive(event.target));
+ if(!last)return;
+ const dx=event.screenX-last.x,dy=event.screenY-last.y;
+ if(Math.abs(dx)+Math.abs(dy)>2){moved=true;window.pet.dragRemote(dx,dy);last={x:event.screenX,y:event.screenY}}
+});
+other.addEventListener('pointerdown',event=>{
+ moved=false;
+ if(event.button!==0||!event.target.closest('#avatar:not([hidden]),#fallback:not([hidden]),#status'))return;
+ last={x:event.screenX,y:event.screenY};other.setPointerCapture(event.pointerId);window.pet.remoteDragState(true);
+});
+function endDrag(){if(last){last=null;window.pet.remoteDragState(false)}}
+other.addEventListener('pointerup',endDrag);
+other.addEventListener('pointercancel',endDrag);
+other.addEventListener('pointerleave',()=>{if(!last)window.pet.remoteInteractive(false)});
+let clicks=0,clickTimer;
+other.addEventListener('click',event=>{if(moved||!interactive(event.target))return;const todo=document.querySelector('#todo');todo.hidden=!todo.hidden;window.pet.remoteInteractive(interactive(event.target));if(event.target.closest('#avatar,#fallback,#status')){clicks++;clearTimeout(clickTimer);clickTimer=setTimeout(()=>clicks=0,800);if(clicks>=3){clicks=0;window.pet.pokeFriend()}}});
+window.pet.onReaction(value=>{other.classList.remove(value==='glow'?'glowing':'shaking');void other.offsetWidth;const name=value==='glow'?'glowing':'shaking';other.classList.add(name);setTimeout(()=>other.classList.remove(name),1000)});
 </script></html>

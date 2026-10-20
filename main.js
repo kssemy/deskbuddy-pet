@@ -2,11 +2,13 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, scr
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { randomUUID } = require('node:crypto');
 const { step } = require('./motion');
 const { workState } = require('./worktime');
 
 let petWindow;
 let panelWindow;
+let topWindow;
 let panelMode;
 let data;
 let position;
@@ -22,6 +24,9 @@ let moveErrorUntil = 0;
 let remoteSession;
 let remoteError = '';
 let remoteTimer;
+let remoteSyncQueue = Promise.resolve();
+let reaction = null;
+const seenReactions = new Map();
 const remoteWindows = new Map();
 const REMOTE_URL = 'https://tgyfscvjnkaiykyfyzcc.supabase.co/rest/v1';
 const REMOTE_KEY = 'sb_publishable_4bdFjW6A7ahg9AaaV8AetQ_KEFbNYvw';
@@ -44,7 +49,7 @@ function isPng(file) {
 function loadData() {
   let saved = {};
   try { saved = JSON.parse(fs.readFileSync(dataPath(), 'utf8')); } catch {}
-  return { size: 130, bubbleOpacity: 100, tasks: [], memos: [], speech: '', workStart: '09:00', workEnd: '18:00',
+  return { size: 130, bubbleOpacity: 100, tasks: [], fixedTasks: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
     lunchStart: '12:00', lunchEnd: '13:00', sessions: [], todoHeight: null, followMouse: false,
     alwaysOnTop: true, autoLaunch: false, poseFiles: [],
     ...saved, tasks: (saved.tasks || []).map(task => ({ ...task, day: task.day || today() })) };
@@ -112,7 +117,7 @@ function movePet() {
 function moveRemotePets() {
   if (panelWindow) return;
   for (const item of remoteWindows.values()) {
-    if (item.window.isDestroyed()) continue;
+    if (item.window.isDestroyed() || item.pinned || item.dragging || item.hovered) continue;
     const area = screen.getDisplayMatching(item.window.getBounds()).workArea;
     [item.x, item.vx] = step(item.x, item.vx, area.x, area.x + area.width - 190);
     [item.y, item.vy] = step(item.y, item.vy, area.y + 8, area.y + area.height - 400);
@@ -159,14 +164,31 @@ function showRemotePets(rows) {
       const y = area.y + Math.round(Math.random() * Math.max(0, area.height - 400));
       const window = makeWindow('other.html', { width: 190, height: 400, x, y, frame: false,
         transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false, hasShadow: false });
-      item = { window, x, y, vx: 0.25, vy: 0.18 };
+      item = { window, x, y, vx: 0.25, vy: 0.18, hovered: false, dragging: false, pinned: false };
       remoteWindows.set(row.member_id, item);
-      window.webContents.once('did-finish-load', () => window.webContents.send('remote-update', row));
-    } else item.window.webContents.send('remote-update', row);
+      window.setIgnoreMouseEvents(true, { forward: true });
+      window.webContents.on('context-menu', () => Menu.buildFromTemplate([
+        { label: item.pinned ? '자동 이동 다시 켜기' : '여기에 고정', click: () => { item.pinned = !item.pinned; } }
+      ]).popup({ window }));
+      window.webContents.once('did-finish-load', () => { window.webContents.send('remote-update', row); showReaction(row, window); });
+    } else { item.window.webContents.send('remote-update', row); showReaction(row, item.window); }
   }
   for (const [id, item] of remoteWindows) if (!active.has(id)) { item.window.close(); remoteWindows.delete(id); }
 }
-async function syncRemote() {
+function showReaction(row, window) {
+  const events = Array.isArray(row.public_tasks) ? row.public_tasks.filter(task => task && task.type && Date.now() - Number(task.createdAt) < 30000) : [];
+  for (const event of events) {
+    if (seenReactions.get(row.member_id) === event.id) continue;
+    seenReactions.set(row.member_id, event.id);
+    if (event.type === 'glow') window.webContents.send('remote-reaction', 'glow');
+    if (event.type === 'poke' && event.to === remoteSession?.id) petWindow?.webContents.send('pet-reaction', 'shake');
+  }
+}
+function syncRemote() {
+  remoteSyncQueue = remoteSyncQueue.then(sendRemote, sendRemote);
+  return remoteSyncQueue;
+}
+async function sendRemote() {
   if (!remoteSession) return;
   try {
     const state = workState(new Date(), data);
@@ -174,8 +196,8 @@ async function syncRemote() {
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ member_id: remoteSession.id, name: remoteSession.name, avatar: avatarData(), speech: data.speech || '',
         status: state,
-        public_tasks: (data.tasks || []).filter(task => task.day === today() && task.public)
-          .map(task => ({ text: task.text, done: task.done })), updated_at: new Date().toISOString() }) });
+        public_tasks: [...(data.shareTodos ? [...(data.fixedTasks || []), ...(data.tasks || []).filter(task => task.day === today())] : [])
+          .map(task => ({ text: task.text, done: task.done })), ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
     const rows = await remoteApi('/pet_presence?select=*');
     showRemotePets(rows || []);
     if (remoteError) { remoteError = ''; broadcast(); }
@@ -253,6 +275,8 @@ app.whenReady().then(() => {
       { label: '종료', click: () => app.quit() }
     ]).popup({ window: petWindow });
   });
+  topWindow = makeWindow('top.html', { width: 28, height: 28, x: area.x + area.width - 34, y: area.y + 6,
+    frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false });
   movement = setInterval(() => { movePet(); moveRemotePets(); }, 30);
   remoteTimer = setInterval(syncRemote, 10000);
   if (remoteSession) syncRemote();
@@ -305,10 +329,21 @@ ipcMain.handle('set-tasks', (_event, tasks) => {
     id: String(task.id).slice(0, 80),
     text: String(task.text).slice(0, 200),
     done: !!task.done,
-    public: !!task.public,
     day: /^\d{4}-\d{2}-\d{2}$/.test(task.day) ? task.day : today()
   }));
   saveData();
+  void syncRemote();
+  return publicData();
+});
+ipcMain.handle('set-fixed-tasks', (_event, tasks) => {
+  if (!Array.isArray(tasks)) return publicData();
+  data.fixedTasks = tasks.slice(0, 100).map(task => ({ id: String(task.id).slice(0, 80), text: String(task.text).slice(0, 200), done: !!task.done }));
+  saveData(); void syncRemote(); return publicData();
+});
+ipcMain.handle('set-share-todos', (_event, value) => {
+  data.shareTodos = !!value;
+  saveData();
+  void syncRemote();
   return publicData();
 });
 ipcMain.handle('set-memos', (_event, memos) => {
@@ -324,8 +359,10 @@ ipcMain.handle('set-settings', (_event, settings) => {
   data.followMouse = !!settings.followMouse;
   data.alwaysOnTop = !!settings.alwaysOnTop;
   data.autoLaunch = !!settings.autoLaunch;
+  data.completedTodos = settings.completedTodos === 'hide' ? 'hide' : 'bottom';
   petWindow.setAlwaysOnTop(data.alwaysOnTop);
   if (panelWindow && !panelWindow.isDestroyed()) panelWindow.setAlwaysOnTop(data.alwaysOnTop);
+  for (const item of remoteWindows.values()) item.window.setAlwaysOnTop(data.alwaysOnTop);
   const loginOptions = app.isPackaged ? { openAtLogin: data.autoLaunch } :
     { openAtLogin: data.autoLaunch, path: process.execPath, args: [app.getAppPath()] };
   app.setLoginItemSettings(loginOptions);
@@ -346,6 +383,29 @@ ipcMain.handle('set-speech', (_event, text, temporary = false) => {
 });
 ipcMain.on('toggle-panel', () => togglePanel('tasks'));
 ipcMain.on('toggle-chat', () => togglePanel('chat'));
+ipcMain.on('refresh-top', () => {
+  data.alwaysOnTop = true;
+  for (const window of [petWindow, panelWindow, ...[...remoteWindows.values()].map(item => item.window), topWindow]) {
+    if (!window || window.isDestroyed()) continue;
+    window.setAlwaysOnTop(false);
+    window.setAlwaysOnTop(true, 'screen-saver');
+    window.moveTop();
+  }
+  saveData();
+});
+ipcMain.on('glow-pet', () => {
+  reaction = { type: 'glow', id: randomUUID(), createdAt: Date.now() };
+  petWindow?.webContents.send('pet-reaction', 'glow');
+  void syncRemote();
+});
+ipcMain.on('poke-friend', event => {
+  for (const [id, item] of remoteWindows) if (item.window.webContents === event.sender) {
+    reaction = { type: 'poke', id: randomUUID(), to: id, createdAt: Date.now() };
+    item.window.webContents.send('remote-reaction', 'shake');
+    void syncRemote();
+    break;
+  }
+});
 ipcMain.on('resize-panel', (event, height) => {
   if (event.sender === panelWindow?.webContents) resizeTaskPanel(height);
 });
@@ -373,6 +433,7 @@ ipcMain.handle('connect-pet', async (_event, name, pin, register = false) => {
   return publicData();
 });
 ipcMain.handle('disconnect-pet', async () => {
+  await remoteSyncQueue;
   if (remoteSession) await remoteApi('/pet_presence?member_id=eq.' + encodeURIComponent(remoteSession.id), { method: 'DELETE' }).catch(() => {});
   remoteSession = null;
   saveRemoteSession();
@@ -383,6 +444,31 @@ ipcMain.handle('disconnect-pet', async () => {
   return publicData();
 });
 ipcMain.on('hover-pet', (_event, value) => { paused = !!value; });
+function remoteItemFor(sender) {
+  for (const item of remoteWindows.values()) if (item.window.webContents === sender) return item;
+}
+ipcMain.on('remote-interactive', (event, value) => {
+  const item = remoteItemFor(event.sender);
+  if (!item || item.hovered === !!value) return;
+  item.hovered = !!value;
+  if (!item.dragging) item.window.setIgnoreMouseEvents(!item.hovered, { forward: true });
+});
+ipcMain.on('remote-drag-state', (event, value) => {
+  const item = remoteItemFor(event.sender);
+  if (!item) return;
+  item.dragging = !!value;
+  if (item.dragging) item.window.setIgnoreMouseEvents(false);
+  else item.window.setIgnoreMouseEvents(!item.hovered, { forward: true });
+});
+ipcMain.on('remote-drag', (event, dx, dy) => {
+  const item = remoteItemFor(event.sender);
+  if (!item || !item.dragging || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+  const bounds = item.window.getBounds();
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const x = Math.max(area.x, Math.min(area.x + area.width - bounds.width, bounds.x + dx));
+  const y = Math.max(area.y, Math.min(area.y + area.height - bounds.height, bounds.y + dy));
+  if (placeWindow(item.window, x, y)) { item.x = x; item.y = y; item.pinned = true; }
+});
 ipcMain.on('drag-pet', (_event, dx, dy) => {
   if (!petWindow || petWindow.isDestroyed()) return;
   if (!Number.isFinite(Number(dx)) || !Number.isFinite(Number(dy))) return;
