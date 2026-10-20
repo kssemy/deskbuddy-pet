@@ -47,7 +47,7 @@ function render(data){
  for(const key of ['workStart','workEnd','lunchStart','lunchEnd','followMouse','alwaysOnTop','autoLaunch']){const input=document.querySelector('#'+key);if(document.activeElement!==input)input.type==='checkbox'?input.checked=data[key]:input.value=data[key]}
  document.querySelector('#completedTodos').value=data.completedTodos||'bottom';
  document.querySelector('#shareTodos').checked=!!data.shareTodos;
- const remote=data.remote||{};document.querySelector('#connection').textContent=remote.error||((remote.connected?remote.name+' · 연결됨':'연결 전'));
+ const remote=data.remote||{};document.querySelector('#connection').textContent=remote.error||(remote.connected?remote.name+' · 연결됨 · '+(remote.checked?(remote.friendCount?`친구 ${remote.friendCount}명 접속 중`:'나만 접속 중'):'친구 확인 중…'):'연결 전');
  document.querySelector('#loginForm').hidden=!!remote.connected;document.querySelector('#disconnect').hidden=!remote.connected;
  const chatInput=document.querySelector('#chatInput');if(firstRender||document.activeElement!==chatInput)chatInput.value=data.speech||'';
  if(mode==='tasks')requestAnimationFrame(()=>{const total=[...taskList.children].reduce((sum,item)=>sum+item.getBoundingClientRect().height,0),autoHeight=300+Math.max(0,total-95),height=data.todoHeight||autoHeight;document.querySelector('#todoHeight').value=Math.min(700,height);window.pet.resizePanel(height)});

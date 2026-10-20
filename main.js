@@ -29,6 +29,7 @@ let loggedPositionError = false;
 let moveErrorUntil = 0;
 let remoteSession;
 let remoteError = '';
+let remoteChecked = false;
 let remoteTimer;
 let remoteSyncQueue = Promise.resolve();
 let reaction = null;
@@ -73,7 +74,8 @@ function saveData() {
 function publicData() {
   return { ...data, image: fs.existsSync(imagePath()) ? imageUrl(imagePath()) : null,
     workStatus: workState(new Date(), data),
-    remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError },
+    remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError,
+      checked: remoteChecked, friendCount: remoteWindows.size },
     poses: (data.poseFiles || []).filter(name => /^pose-[\w-]+\.png$/.test(name) && fs.existsSync(posePath(name)))
       .map(name => ({ name, url: imageUrl(posePath(name)) })) };
 }
@@ -236,9 +238,13 @@ async function sendRemote() {
         public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
           .map(task => ({ text: task.text, done: task.done })), ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
     const rows = await remoteApi('/pet_presence?select=*');
+    const previousCount = remoteWindows.size;
     showRemotePets(rows || []);
-    if (remoteError) { remoteError = ''; broadcast(); }
-  } catch (error) { remoteError = error.message; broadcast(); }
+    const needsUpdate = !remoteChecked || previousCount !== remoteWindows.size || !!remoteError;
+    remoteChecked = true;
+    remoteError = '';
+    if (needsUpdate) broadcast();
+  } catch (error) { remoteChecked = false; remoteError = error.message; broadcast(); }
 }
 function makeWindow(file, options, query) {
   const win = new BrowserWindow({
@@ -494,6 +500,7 @@ ipcMain.handle('connect-pet', async (_event, name, pin, register = false) => {
   if (result.error) throw new Error(result.error);
   remoteSession = { id: result.member_id, name: result.name, token: result.session_token };
   saveRemoteSession();
+  remoteChecked = false;
   remoteError = '';
   broadcast();
   await syncRemote();
@@ -506,6 +513,7 @@ ipcMain.handle('disconnect-pet', async () => {
   saveRemoteSession();
   for (const item of remoteWindows.values()) item.window.close();
   remoteWindows.clear();
+  remoteChecked = false;
   remoteError = '';
   broadcast();
   return publicData();
