@@ -6,6 +6,7 @@ const { randomUUID } = require('node:crypto');
 const { step } = require('./motion');
 const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
+const { workMinutesForDay, tasksForDay } = require('./history');
 
 let petWindow;
 let panelWindow;
@@ -53,10 +54,13 @@ function isPng(file) {
 function loadData() {
   let saved = {};
   try { saved = JSON.parse(fs.readFileSync(dataPath(), 'utf8')); } catch {}
-  return { size: 130, bubbleOpacity: 100, tasks: [], fixedTasks: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
+  const tasks = [...(saved.tasks || []).map(task => ({ ...task, day: task.day || today() })),
+    ...(saved.fixedTasks || []).map(task => ({ ...task, day: task.day || today(), pinned: true }))]
+    .map(task => ({ ...task, completedAt: task.done ? (task.completedAt || task.day) : '' }));
+  return { size: 130, bubbleOpacity: 100, tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
     lunchStart: '12:00', lunchEnd: '13:00', sessions: [], todoHeight: null, followMouse: false,
     alwaysOnTop: true, autoLaunch: false, poseFiles: [],
-    ...saved, tasks: (saved.tasks || []).map(task => ({ ...task, day: task.day || today() })) };
+    ...saved, fixedTasks: [], tasks };
 }
 function saveData() {
   fs.writeFileSync(dataPath(), JSON.stringify(data, null, 2));
@@ -124,7 +128,7 @@ function moveRemotePets() {
     if (item.window.isDestroyed() || item.pinned || item.dragging || item.hovered) continue;
     const area = screen.getDisplayMatching(item.window.getBounds()).workArea;
     [item.x, item.vx] = step(item.x, item.vx, area.x, area.x + area.width - 190);
-    [item.y, item.vy] = step(item.y, item.vy, area.y + 8, area.y + area.height - 400);
+    [item.y, item.vy] = step(item.y, item.vy, area.y - 260, area.y + area.height - 400);
     if (!placeWindow(item.window, item.x, item.y)) { item.x = item.window.getBounds().x; item.y = item.window.getBounds().y; item.vx = 0; item.vy = 0; }
   }
 }
@@ -222,7 +226,7 @@ async function sendRemote() {
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ member_id: remoteSession.id, name: remoteSession.name, avatar: avatarData(), speech: data.speech || '',
         status: state,
-        public_tasks: [...(data.shareTodos ? [...(data.fixedTasks || []), ...(data.tasks || []).filter(task => task.day === today())] : [])
+        public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
           .map(task => ({ text: task.text, done: task.done })), ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
     const rows = await remoteApi('/pet_presence?select=*');
     showRemotePets(rows || []);
@@ -239,6 +243,7 @@ function makeWindow(file, options, query) {
   return win;
 }
 function togglePanel(mode = 'tasks') {
+  const file = mode === 'history' ? 'history.html' : 'panel.html';
   if (panelWindow && !panelWindow.isDestroyed()) {
     if (panelMode === mode) panelWindow.close();
     else {
@@ -246,14 +251,14 @@ function togglePanel(mode = 'tasks') {
       const bounds = panelBounds(mode);
       const { placement, ...windowBounds } = bounds;
       panelWindow.setBounds(windowBounds);
-      panelWindow.loadFile(path.join(__dirname, 'panel.html'), { query: { mode, placement: bounds.placement } });
+      panelWindow.loadFile(path.join(__dirname, file), { query: { mode, placement: bounds.placement } });
     }
     return;
   }
   const bounds = panelBounds(mode);
   const { placement, ...windowBounds } = bounds;
   panelMode = mode;
-  panelWindow = makeWindow('panel.html', { ...windowBounds,
+  panelWindow = makeWindow(file, { ...windowBounds,
     frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false,
     hasShadow: false, title: '캐릭터 말풍선' }, { placement, mode });
   panelWindow.on('closed', () => { panelWindow = null; panelMode = null; });
@@ -261,8 +266,8 @@ function togglePanel(mode = 'tasks') {
 function panelBounds(mode) {
   const { x, y } = petWindow.getBounds();
   const area = screen.getDisplayMatching(petWindow.getBounds()).workArea;
-  const width = mode === 'settings' ? 280 : 240;
-  const height = Math.min(mode === 'tasks' ? (data.todoHeight || 280) : mode === 'settings' ? 590 : 66, area.height - 16);
+  const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'settings' ? 280 : 240;
+  const height = Math.min(mode === 'tasks' ? (data.todoHeight || 300) : mode === 'history' ? 650 : mode === 'settings' ? 590 : 66, area.height - 16);
   const figureTop = y + 217 - data.size;
   const placement = figureTop - height >= area.y ? 'above' : 'below';
   return { width, height, placement,
@@ -283,7 +288,7 @@ function resizeTaskPanel(height) {
 app.whenReady().then(() => {
   data = loadData();
   loadRemoteSession();
-  data.sessions = (data.sessions || []).filter(session => Number(session.startedAt) > Date.now() - 90 * 86400000);
+  data.sessions = (data.sessions || []).map(session => session.endedAt ? session : { ...session, endedAt: session.lastSeenAt });
   activeSession = { startedAt: Date.now(), lastSeenAt: Date.now() };
   data.sessions.push(activeSession);
   saveData();
@@ -309,6 +314,19 @@ app.whenReady().then(() => {
 });
 
 ipcMain.handle('load', () => publicData());
+ipcMain.handle('history-month', (_event, year, month) => {
+  year = Number(year); month = Number(month);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isInteger(month) || month < 1 || month > 12) return null;
+  if (activeSession) activeSession.lastSeenAt = Date.now();
+  const count = new Date(year, month, 0).getDate();
+  const days = Array.from({ length: count }, (_, index) => {
+    const date = new Date(year, month - 1, index + 1);
+    const key = `${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`;
+    return { day: index + 1, key, minutes: workMinutesForDay(date, data.sessions, data),
+      tasks: tasksForDay(key, data.tasks, data.taskHistory || [], today()) };
+  });
+  return { year, month, days, total: days.reduce((sum, day) => sum + day.minutes, 0) };
+});
 ipcMain.handle('check-update', async () => {
   try {
     const response = await fetch('https://api.github.com/repos/kssemy/deskbuddy-pet/releases/latest', {
@@ -365,20 +383,19 @@ ipcMain.handle('set-opacity', (_event, value) => {
 });
 ipcMain.handle('set-tasks', (_event, tasks) => {
   if (!Array.isArray(tasks)) return publicData();
-  data.tasks = tasks.slice(0, 100).map(task => ({
+  const incoming = new Set(tasks.map(task => String(task.id)));
+  data.taskHistory = [...(data.taskHistory || []), ...data.tasks.filter(task => task.done && !incoming.has(task.id)).map(task => ({ ...task, removedAt: today() }))];
+  data.tasks = tasks.slice(0, 200).map(task => ({
     id: String(task.id).slice(0, 80),
     text: String(task.text).slice(0, 200),
     done: !!task.done,
-    day: /^\d{4}-\d{2}-\d{2}$/.test(task.day) ? task.day : today()
+    pinned: !!task.pinned,
+    day: /^\d{4}-\d{2}-\d{2}$/.test(task.day) ? task.day : today(),
+    completedAt: task.done ? (/^\d{4}-\d{2}-\d{2}$/.test(task.completedAt) ? task.completedAt : today()) : ''
   }));
   saveData();
   void syncRemote();
   return publicData();
-});
-ipcMain.handle('set-fixed-tasks', (_event, tasks) => {
-  if (!Array.isArray(tasks)) return publicData();
-  data.fixedTasks = tasks.slice(0, 100).map(task => ({ id: String(task.id).slice(0, 80), text: String(task.text).slice(0, 200), done: !!task.done }));
-  saveData(); void syncRemote(); return publicData();
 });
 ipcMain.handle('set-share-todos', (_event, value) => {
   data.shareTodos = !!value;
@@ -422,6 +439,7 @@ ipcMain.handle('set-speech', (_event, text, temporary = false) => {
   return publicData();
 });
 ipcMain.on('toggle-panel', () => togglePanel('tasks'));
+ipcMain.on('open-history', () => togglePanel('history'));
 ipcMain.on('toggle-chat', () => togglePanel('chat'));
 ipcMain.on('refresh-top', () => {
   data.alwaysOnTop = true;
@@ -450,9 +468,9 @@ ipcMain.on('resize-panel', (event, height) => {
   if (event.sender === panelWindow?.webContents) resizeTaskPanel(height);
 });
 ipcMain.handle('set-todo-height', (_event, height) => {
-  data.todoHeight = height == null ? null : Math.max(200, Math.min(700, Math.round(Number(height) || 280)));
+  data.todoHeight = height == null ? null : Math.max(200, Math.min(700, Math.round(Number(height) || 300)));
   saveData();
-  if (panelMode === 'tasks') resizeTaskPanel(data.todoHeight || 280);
+  if (panelMode === 'tasks') resizeTaskPanel(data.todoHeight || 300);
   return publicData();
 });
 ipcMain.handle('connect-pet', async (_event, name, pin, register = false) => {
@@ -506,7 +524,7 @@ ipcMain.on('remote-drag', (event, dx, dy) => {
   const bounds = item.window.getBounds();
   const area = screen.getDisplayMatching(bounds).workArea;
   const x = Math.max(area.x, Math.min(area.x + area.width - bounds.width, bounds.x + dx));
-  const y = Math.max(area.y, Math.min(area.y + area.height - bounds.height, bounds.y + dy));
+  const y = Math.max(area.y - 260, Math.min(area.y + area.height - bounds.height, bounds.y + dy));
   if (placeWindow(item.window, x, y)) { item.x = x; item.y = y; item.pinned = true; }
 });
 ipcMain.on('drag-pet', (_event, dx, dy) => {

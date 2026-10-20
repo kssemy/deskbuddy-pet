@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('pet', {
   load: () => ipcRenderer.invoke('load'),
+  historyMonth: (year, month) => ipcRenderer.invoke('history-month', year, month),
+  openHistory: () => ipcRenderer.send('open-history'),
   checkUpdate: () => ipcRenderer.invoke('check-update'),
   openRelease: () => ipcRenderer.send('open-release'),
   chooseImage: () => ipcRenderer.invoke('choose-image'),
@@ -15,7 +17,6 @@ contextBridge.exposeInMainWorld('pet', {
   setSize: value => ipcRenderer.invoke('set-size', value),
   setOpacity: value => ipcRenderer.invoke('set-opacity', value),
   setTasks: tasks => ipcRenderer.invoke('set-tasks', tasks),
-  setFixedTasks: tasks => ipcRenderer.invoke('set-fixed-tasks', tasks),
   setShareTodos: value => ipcRenderer.invoke('set-share-todos', value),
   setMemos: memos => ipcRenderer.invoke('set-memos', memos),
   setSettings: settings => ipcRenderer.invoke('set-settings', settings),

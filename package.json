@@ -1,11 +1,11 @@
 {
   "name": "workbuddy-pet-prototype",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test motion.test.js worktime.test.js meeting.test.js"
+    "test": "node --test motion.test.js worktime.test.js meeting.test.js history.test.js"
   },
   "devDependencies": {
     "electron": "^38.0.0"
