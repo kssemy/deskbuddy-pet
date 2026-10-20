@@ -7,6 +7,7 @@ const { step } = require('./motion');
 const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
 const { workMinutesForDay, tasksForDay } = require('./history');
+const { envelope, fitToDisplays } = require('./desktop');
 
 let petWindow;
 let panelWindow;
@@ -14,6 +15,9 @@ let topWindow;
 let panelMode;
 let data;
 let position;
+let ownDragStart;
+let workAreas = [];
+const FRIEND_VISUAL = { left: 35, right: 155, top: 261, bottom: 395 };
 let velocity = { x: 0.55, y: 0.3 };
 let paused = false;
 let dragging = false;
@@ -79,11 +83,13 @@ function broadcast() {
   }
 }
 function petBounds() {
-  const display = screen.getDisplayMatching(petWindow.getBounds());
-  const area = display.workArea;
-  return { minX: area.x, maxX: area.x + area.width - petWindow.getBounds().width,
-    minY: area.y - (217 - data.size), maxY: area.y + area.height - petWindow.getBounds().height };
+  return envelope(workAreas, ownVisual());
 }
+function ownVisual() {
+  const left = (240 - data.size) / 2;
+  return { left, right: left + data.size, top: 217 - data.size, bottom: 240 };
+}
+function refreshWorkAreas() { workAreas = screen.getAllDisplays().map(display => display.workArea); }
 function placeWindow(window, x, y) {
   x = Math.round(x); y = Math.round(y);
   if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
@@ -116,20 +122,21 @@ function movePet() {
     position = { x: window.x, y: window.y };
     return;
   }
-  if (!placeWindow(petWindow, position.x, position.y)) {
+  const fitted = fitToDisplays(position.x, position.y, workAreas, ownVisual());
+  if (!placeWindow(petWindow, fitted.x, fitted.y)) {
     position = { x: window.x, y: window.y };
     velocity = { x: -velocity.x, y: -velocity.y };
     moveErrorUntil = Date.now() + 1000;
   }
 }
 function moveRemotePets() {
-  if (panelWindow) return;
+  const b = envelope(workAreas, FRIEND_VISUAL);
   for (const item of remoteWindows.values()) {
     if (item.window.isDestroyed() || item.pinned || item.dragging || item.hovered) continue;
-    const area = screen.getDisplayMatching(item.window.getBounds()).workArea;
-    [item.x, item.vx] = step(item.x, item.vx, area.x, area.x + area.width - 190);
-    [item.y, item.vy] = step(item.y, item.vy, area.y - 260, area.y + area.height - 400);
-    if (!placeWindow(item.window, item.x, item.y)) { item.x = item.window.getBounds().x; item.y = item.window.getBounds().y; item.vx = 0; item.vy = 0; }
+    [item.x, item.vx] = step(item.x, item.vx, b.minX, b.maxX);
+    [item.y, item.vy] = step(item.y, item.vy, b.minY, b.maxY);
+    const fitted = fitToDisplays(item.x, item.y, workAreas, FRIEND_VISUAL);
+    if (!placeWindow(item.window, fitted.x, fitted.y)) { item.x = item.window.getBounds().x; item.y = item.window.getBounds().y; item.vx = 0; item.vy = 0; }
   }
 }
 function checkMeetings() {
@@ -189,7 +196,7 @@ function showRemotePets(rows) {
       const y = area.y + Math.round(Math.random() * Math.max(0, area.height - 400));
       const window = makeWindow('other.html', { width: 190, height: 400, x, y, frame: false,
         transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false, hasShadow: false });
-      item = { window, x, y, vx: 0.25, vy: 0.18, hovered: false, dragging: false, pinned: false };
+      item = { window, x, y, vx: 0.45, vy: 0.3, hovered: false, dragging: false, pinned: false };
       remoteWindows.set(row.member_id, item);
       window.setIgnoreMouseEvents(true, { forward: true });
       window.webContents.on('context-menu', () => Menu.buildFromTemplate([
@@ -265,7 +272,7 @@ function togglePanel(mode = 'tasks') {
 }
 function panelBounds(mode) {
   const { x, y } = petWindow.getBounds();
-  const area = screen.getDisplayMatching(petWindow.getBounds()).workArea;
+  const area = screen.getDisplayNearestPoint({ x: x + 120, y: y + 217 - data.size / 2 }).workArea;
   const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'settings' ? 280 : 240;
   const height = Math.min(mode === 'tasks' ? (data.todoHeight || 300) : mode === 'history' ? 650 : mode === 'settings' ? 590 : 66, area.height - 16);
   const figureTop = y + 217 - data.size;
@@ -286,6 +293,8 @@ function resizeTaskPanel(height) {
 }
 
 app.whenReady().then(() => {
+  refreshWorkAreas();
+  for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, refreshWorkAreas);
   data = loadData();
   loadRemoteSession();
   data.sessions = (data.sessions || []).map(session => session.endedAt ? session : { ...session, endedAt: session.lastSeenAt });
@@ -515,27 +524,31 @@ ipcMain.on('remote-drag-state', (event, value) => {
   const item = remoteItemFor(event.sender);
   if (!item) return;
   item.dragging = !!value;
-  if (item.dragging) item.window.setIgnoreMouseEvents(false);
-  else item.window.setIgnoreMouseEvents(!item.hovered, { forward: true });
+  if (item.dragging) { item.dragStart = item.window.getBounds(); item.window.setIgnoreMouseEvents(false); }
+  else { item.dragStart = null; item.window.setIgnoreMouseEvents(!item.hovered, { forward: true }); }
 });
 ipcMain.on('remote-drag', (event, dx, dy) => {
   const item = remoteItemFor(event.sender);
-  if (!item || !item.dragging || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
-  const bounds = item.window.getBounds();
-  const area = screen.getDisplayMatching(bounds).workArea;
-  const x = Math.max(area.x, Math.min(area.x + area.width - bounds.width, bounds.x + dx));
-  const y = Math.max(area.y - 260, Math.min(area.y + area.height - bounds.height, bounds.y + dy));
-  if (placeWindow(item.window, x, y)) { item.x = x; item.y = y; item.pinned = true; }
+  if (!item || !item.dragging || !item.dragStart || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+  const b = envelope(workAreas, FRIEND_VISUAL);
+  const x = Math.max(b.minX, Math.min(b.maxX, item.dragStart.x + dx));
+  const y = Math.max(b.minY, Math.min(b.maxY, item.dragStart.y + dy));
+  const fitted = fitToDisplays(x, y, workAreas, FRIEND_VISUAL);
+  if (placeWindow(item.window, fitted.x, fitted.y)) { item.x = fitted.x; item.y = fitted.y; item.pinned = true; }
 });
-ipcMain.on('drag-pet', (_event, dx, dy) => {
+ipcMain.on('drag-pet-start', event => { if (event.sender === petWindow?.webContents) ownDragStart = petWindow.getBounds(); });
+ipcMain.on('drag-pet-end', event => { if (event.sender === petWindow?.webContents) ownDragStart = null; });
+ipcMain.on('drag-pet', (event, dx, dy) => {
+  if (event.sender !== petWindow?.webContents || !ownDragStart) return;
   if (!petWindow || petWindow.isDestroyed()) return;
   if (!Number.isFinite(Number(dx)) || !Number.isFinite(Number(dy))) return;
   if (panelWindow && !panelWindow.isDestroyed()) panelWindow.close();
   dragging = true;
   const [x, y] = petWindow.getPosition();
   const b = petBounds();
-  position = { x: Math.max(b.minX, Math.min(b.maxX, x + Number(dx))),
-    y: Math.max(b.minY, Math.min(b.maxY, y + Number(dy))) };
+  const candidate = { x: Math.max(b.minX, Math.min(b.maxX, ownDragStart.x + Number(dx))),
+    y: Math.max(b.minY, Math.min(b.maxY, ownDragStart.y + Number(dy))) };
+  position = fitToDisplays(candidate.x, candidate.y, workAreas, ownVisual());
   if (!placeWindow(petWindow, position.x, position.y)) position = { x, y };
   dragging = false;
 });

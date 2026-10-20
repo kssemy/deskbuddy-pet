@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('pet', {
   togglePanel: () => ipcRenderer.send('toggle-panel'),
   toggleChat: () => ipcRenderer.send('toggle-chat'),
   drag: (dx, dy) => ipcRenderer.send('drag-pet', dx, dy),
+  dragStart: () => ipcRenderer.send('drag-pet-start'),
+  dragEnd: () => ipcRenderer.send('drag-pet-end'),
   remoteInteractive: value => ipcRenderer.send('remote-interactive', value),
   remoteDragState: value => ipcRenderer.send('remote-drag-state', value),
   dragRemote: (dx, dy) => ipcRenderer.send('remote-drag', dx, dy),

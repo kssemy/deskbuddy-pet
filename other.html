@@ -36,7 +36,7 @@ other.addEventListener('pointermove',event=>{
  window.pet.remoteInteractive(interactive(event.target));
  if(!last)return;
  const dx=event.screenX-last.x,dy=event.screenY-last.y;
- if(Math.abs(dx)+Math.abs(dy)>2){moved=true;window.pet.dragRemote(dx,dy);last={x:event.screenX,y:event.screenY}}
+ if(Math.abs(dx)+Math.abs(dy)>2){moved=true;window.pet.dragRemote(dx,dy)}
 });
 other.addEventListener('pointerdown',event=>{
  moved=false;

@@ -89,6 +89,7 @@
     if (event.button !== 0) return;
     last = { x: event.screenX, y: event.screenY };
     moved = false;
+    window.pet.dragStart();
     window.pet.hover(true);
   });
   petElement.addEventListener('pointermove', event => {
@@ -98,10 +99,10 @@
       if (!moved) petElement.setPointerCapture(event.pointerId);
       moved = true;
       window.pet.drag(dx, dy);
-      last = { x: event.screenX, y: event.screenY };
     }
   });
-  petElement.addEventListener('pointerup', () => { last = null; });
+  petElement.addEventListener('pointerup', () => { last = null; window.pet.dragEnd(); });
+  petElement.addEventListener('pointercancel', () => { last = null; window.pet.dragEnd(); });
   petElement.addEventListener('click', () => { if (!moved) window.pet.togglePanel(); });
   chatButton.addEventListener('pointerdown', event => event.stopPropagation());
   chatButton.addEventListener('click', event => {
