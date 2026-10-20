@@ -7,6 +7,8 @@
 #avatar{width:120px;height:120px;object-fit:contain;animation:float 2s ease-in-out infinite}
 #other.glowing #avatar,#other.glowing #fallback{filter:drop-shadow(0 0 10px #ffd45d) drop-shadow(0 0 19px #ffc238)}
 #other.shaking #avatar,#other.shaking #fallback{animation:shake .12s linear 8}
+#other.highfive:after{content:'🙌✨';position:absolute;bottom:165px;left:50%;transform:translateX(-50%);font-size:26px;pointer-events:none;animation:highfive 1.2s ease-out forwards}
+@keyframes highfive{to{opacity:0;transform:translate(-50%,-28px)}}
 @keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 #fallback{font-size:100px;line-height:1;animation:float 2s ease-in-out infinite}
 #status{max-width:185px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -47,5 +49,5 @@ other.addEventListener('pointercancel',endDrag);
 other.addEventListener('pointerleave',()=>{if(!last)window.pet.remoteInteractive(false)});
 let clicks=0,clickTimer;
 other.addEventListener('click',event=>{if(moved||!interactive(event.target))return;const todo=document.querySelector('#todo');todo.hidden=!todo.hidden;window.pet.remoteInteractive(interactive(event.target));if(event.target.closest('#avatar,#fallback,#status')){clicks++;clearTimeout(clickTimer);clickTimer=setTimeout(()=>clicks=0,800);if(clicks>=3){clicks=0;window.pet.pokeFriend()}}});
-window.pet.onReaction(value=>{other.classList.remove(value==='glow'?'glowing':'shaking');void other.offsetWidth;const name=value==='glow'?'glowing':'shaking';other.classList.add(name);setTimeout(()=>other.classList.remove(name),1000)});
+window.pet.onReaction(value=>{const name=value==='glow'?'glowing':value==='highfive'?'highfive':'shaking';other.classList.remove(name);void other.offsetWidth;other.classList.add(name);setTimeout(()=>other.classList.remove(name),1200)});
 </script></html>

@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('pet', {
   load: () => ipcRenderer.invoke('load'),
+  checkUpdate: () => ipcRenderer.invoke('check-update'),
+  openRelease: () => ipcRenderer.send('open-release'),
   chooseImage: () => ipcRenderer.invoke('choose-image'),
   addPoses: () => ipcRenderer.invoke('add-poses'),
   removePose: name => ipcRenderer.invoke('remove-pose', name),

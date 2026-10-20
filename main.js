@@ -1,10 +1,11 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, screen, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { randomUUID } = require('node:crypto');
 const { step } = require('./motion');
 const { workState } = require('./worktime');
+const { charactersMeet } = require('./meeting');
 
 let petWindow;
 let panelWindow;
@@ -28,6 +29,9 @@ let remoteSyncQueue = Promise.resolve();
 let reaction = null;
 const seenReactions = new Map();
 const remoteWindows = new Map();
+const meeting = new Set();
+const lastHighfive = new Map();
+const RELEASE_URL = 'https://github.com/kssemy/deskbuddy-pet/releases/latest';
 const REMOTE_URL = 'https://tgyfscvjnkaiykyfyzcc.supabase.co/rest/v1';
 const REMOTE_KEY = 'sb_publishable_4bdFjW6A7ahg9AaaV8AetQ_KEFbNYvw';
 const today = () => {
@@ -124,6 +128,23 @@ function moveRemotePets() {
     if (!placeWindow(item.window, item.x, item.y)) { item.x = item.window.getBounds().x; item.y = item.window.getBounds().y; item.vx = 0; item.vy = 0; }
   }
 }
+function checkMeetings() {
+  if (!remoteSession || !petWindow || petWindow.isDestroyed()) return;
+  const own = petWindow.getBounds();
+  for (const [id, item] of remoteWindows) {
+    if (item.window.isDestroyed() || item.window.webContents.isLoading()) continue;
+    const close = charactersMeet(own, item.window.getBounds(), data.size);
+    if (!close) { meeting.delete(id); continue; }
+    if (meeting.has(id)) continue;
+    meeting.add(id);
+    if (Date.now() - (lastHighfive.get(id) || 0) < 15000) continue;
+    lastHighfive.set(id, Date.now());
+    reaction = { type: 'highfive', id: randomUUID(), to: id, createdAt: Date.now() };
+    petWindow.webContents.send('pet-reaction', 'highfive');
+    item.window.webContents.send('remote-reaction', 'highfive');
+    void syncRemote();
+  }
+}
 async function remoteApi(route, options = {}) {
   const response = await fetch(REMOTE_URL + route, { ...options, headers: {
     apikey: REMOTE_KEY, Authorization: 'Bearer ' + REMOTE_KEY,
@@ -173,7 +194,7 @@ function showRemotePets(rows) {
       window.webContents.once('did-finish-load', () => { window.webContents.send('remote-update', row); showReaction(row, window); });
     } else { item.window.webContents.send('remote-update', row); showReaction(row, item.window); }
   }
-  for (const [id, item] of remoteWindows) if (!active.has(id)) { item.window.close(); remoteWindows.delete(id); }
+  for (const [id, item] of remoteWindows) if (!active.has(id)) { item.window.close(); remoteWindows.delete(id); meeting.delete(id); }
 }
 function showReaction(row, window) {
   const events = Array.isArray(row.public_tasks) ? row.public_tasks.filter(task => task && task.type && Date.now() - Number(task.createdAt) < 30000) : [];
@@ -182,6 +203,11 @@ function showReaction(row, window) {
     seenReactions.set(row.member_id, event.id);
     if (event.type === 'glow') window.webContents.send('remote-reaction', 'glow');
     if (event.type === 'poke' && event.to === remoteSession?.id) petWindow?.webContents.send('pet-reaction', 'shake');
+    if (event.type === 'highfive' && event.to === remoteSession?.id) {
+      lastHighfive.set(row.member_id, Date.now());
+      window.webContents.send('remote-reaction', 'highfive');
+      petWindow?.webContents.send('pet-reaction', 'highfive');
+    }
   }
 }
 function syncRemote() {
@@ -277,12 +303,26 @@ app.whenReady().then(() => {
   });
   topWindow = makeWindow('top.html', { width: 28, height: 28, x: area.x + area.width - 34, y: area.y + 6,
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false });
-  movement = setInterval(() => { movePet(); moveRemotePets(); }, 30);
+  movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 30);
   remoteTimer = setInterval(syncRemote, 10000);
   if (remoteSession) syncRemote();
 });
 
 ipcMain.handle('load', () => publicData());
+ipcMain.handle('check-update', async () => {
+  try {
+    const response = await fetch('https://api.github.com/repos/kssemy/deskbuddy-pet/releases/latest', {
+      headers: { 'User-Agent': 'DeskBuddy' }, signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) throw new Error('GitHub 응답 오류');
+    const release = await response.json();
+    const latest = String(release.tag_name || '').replace(/^v/, '');
+    const current = app.getVersion();
+    if (!/^\d+\.\d+\.\d+$/.test(latest)) throw new Error('버전 정보를 읽을 수 없어요.');
+    return { current, latest, update: latest.localeCompare(current, undefined, { numeric: true }) > 0 };
+  } catch { throw new Error('최신 버전을 확인할 수 없어요. 인터넷 연결을 확인해 주세요.'); }
+});
+ipcMain.on('open-release', () => { void shell.openExternal(RELEASE_URL); });
 ipcMain.handle('choose-image', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'PNG 이미지', extensions: ['png'] }] });
   if (result.canceled) return publicData();
