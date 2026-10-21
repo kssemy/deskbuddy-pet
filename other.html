@@ -4,6 +4,10 @@
 #other{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:5px;cursor:default}
 #avatar,#fallback{width:var(--size,130px);height:var(--size,130px);object-fit:contain;cursor:grab}
 #speech{max-width:170px;max-height:65px;padding:5px 7px;border-radius:10px;background:#fffaf5;overflow:hidden;overflow-wrap:anywhere}
+#speech.popping{position:relative;overflow:visible;animation:friendPop .5s ease-out forwards}
+#speech.popping:after{content:'💥';position:absolute;left:50%;top:50%;font-size:22px;animation:burst .5s ease-out forwards}
+@keyframes friendPop{40%{transform:scale(1.15)}100%{transform:scale(.5);opacity:0}}
+@keyframes burst{0%{transform:translate(-50%,-50%) scale(.3);opacity:0}40%{opacity:1}100%{transform:translate(-50%,-50%) scale(1.7);opacity:0}}
 #avatar{animation:float 2s ease-in-out infinite}
 #other.glowing #avatar,#other.glowing #fallback{filter:drop-shadow(0 0 10px #ffd45d) drop-shadow(0 0 19px #ffc238)}
 #other.shaking #avatar,#other.shaking #fallback{animation:shake .24s linear 1}
@@ -18,20 +22,23 @@
 </style>
 <div id="other"><div id="speech" hidden></div><img id="avatar" alt="" draggable="false" hidden><img id="fallback" src="default-character.png" alt="친구 캐릭터" draggable="false"><div id="status"></div><div id="todo" hidden><h2>공개 TO DO</h2><ul></ul></div></div>
 <script>
-let baseAvatar='',friendPoses=[],friendPoseIndex=0,friendPoseActive=false;
+let baseAvatar='',friendPoses=[],friendPoseIndex=0,friendPoseActive=false,remoteExpiresAt=0;
 window.pet.onRemote(data=>{
  document.documentElement.style.setProperty('--size',`${data.displaySize||130}px`);
  const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&data.avatar.startsWith('data:image/png;base64,');
  avatar.hidden=!valid;document.querySelector('#fallback').hidden=valid;
  if(valid&&baseAvatar!==data.avatar){baseAvatar=data.avatar;if(!friendPoseActive)avatar.src=baseAvatar}
  document.querySelector('#status').textContent=data.status||'';
- const speech=document.querySelector('#speech');speech.textContent=data.speech||'';speech.hidden=!data.speech;
+ const speech=document.querySelector('#speech'),expiresAt=data.public_tasks?.find(task=>task.type==='speech-expiry')?.expiresAt||0;
+ if(remoteExpiresAt!==expiresAt)speech.classList.remove('popping');remoteExpiresAt=expiresAt;
+ speech.textContent=data.speech||'';speech.hidden=!data.speech;
  document.documentElement.style.setProperty('--speech-height',speech.hidden?'0px':(speech.offsetHeight+6)+'px');
  const list=document.querySelector('#todo ul');list.replaceChildren();
  for(const task of Array.isArray(data.public_tasks)?data.public_tasks:[]){if(task.type)continue;const li=document.createElement('li');li.textContent=(task.done?'✓ ':'□ ')+String(task.text||'');list.append(li)}
  if(!list.children.length){const li=document.createElement('li');li.textContent='공개된 할 일이 없어요.';list.append(li)}
  reportTodoBounds();
 });
+setInterval(()=>{if(remoteExpiresAt&&Date.now()>=remoteExpiresAt)document.querySelector('#speech').classList.add('popping')},200);
 window.pet.onRemotePoses(poses=>{friendPoses=Array.isArray(poses)?poses.filter(image=>typeof image==='string'&&image.startsWith('data:image/png;base64,')):[];friendPoseIndex=0});
 setInterval(()=>{if(!baseAvatar||!friendPoses.length)return;const avatar=document.querySelector('#avatar');friendPoseActive=true;avatar.src=friendPoses[friendPoseIndex++%friendPoses.length];setTimeout(()=>{friendPoseActive=false;avatar.src=baseAvatar},1800)},8000);
 window.pet.onRemoteSize(size=>{document.documentElement.style.setProperty('--size',`${size}px`);reportTodoBounds()});

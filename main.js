@@ -89,7 +89,7 @@ function loadData() {
     ...(saved.fixedTasks || []).map(task => ({ ...task, day: task.day || today(), pinned: true }))]
     .map(task => ({ ...task, completedAt: task.done ? (task.completedAt || task.day) : '' }));
   return { size: 130, bubbleOpacity: 100, tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
-    lunchStart: '12:00', lunchEnd: '13:00', sessions: [], todoHeight: null, followMouse: false,
+    lunchStart: '12:00', lunchEnd: '13:00', sessions: [], followMouse: false,
     alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFiles: [],
     ...saved, fixedTasks: [], tasks };
 }
@@ -394,6 +394,7 @@ async function sendRemote() {
         status: state,
         public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
           .map(task => ({ text: task.text, done: task.done })), { type: 'poses', revision: data.poseRevision || '' },
+          ...(data.speechExpiresAt ? [{ type: 'speech-expiry', expiresAt: data.speechExpiresAt }] : []),
           ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
     const rows = await remoteApi('/pet_presence?select=*');
     const previousCount = remoteWindows.size;
@@ -438,7 +439,7 @@ function panelBounds(mode) {
   const { x, y } = petWindow.getBounds();
   const area = screen.getDisplayNearestPoint({ x: x + 120, y: y + 217 - data.size / 2 }).workArea;
   const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'settings' ? 280 : 240;
-  const height = Math.min(mode === 'tasks' ? (data.todoHeight || 300) : mode === 'history' ? 650 : mode === 'settings' ? 590 : 66, area.height - 16);
+  const height = Math.min(mode === 'tasks' ? 300 : mode === 'history' ? 650 : mode === 'settings' ? 590 : 66, area.height - 16);
   const figureTop = y + 217 - data.size;
   const placement = figureTop - height >= area.y ? 'above' : 'below';
   return { width, height, placement,
@@ -652,7 +653,7 @@ ipcMain.handle('set-settings', async (_event, settings) => {
 });
 function scheduleSpeechClear() {
   clearTimeout(speechTimer);
-  speechTimer = setTimeout(() => { data.speech = ''; data.speechExpiresAt = 0; saveData(); }, Math.max(0, data.speechExpiresAt - Date.now()));
+  speechTimer = setTimeout(() => { data.speech = ''; data.speechExpiresAt = 0; saveData(); void syncRemote(); }, Math.max(0, data.speechExpiresAt + 550 - Date.now()));
 }
 ipcMain.handle('set-speech', (_event, text, temporary = false) => {
   data.speech = String(text || '').trim().slice(0, 80);
@@ -690,12 +691,6 @@ ipcMain.on('poke-friend', event => {
 });
 ipcMain.on('resize-panel', (event, height) => {
   if (event.sender === panelWindow?.webContents) resizeTaskPanel(height);
-});
-ipcMain.handle('set-todo-height', (_event, height) => {
-  data.todoHeight = height == null ? null : Math.max(200, Math.min(700, Math.round(Number(height) || 300)));
-  saveData();
-  if (panelMode === 'tasks') resizeTaskPanel(data.todoHeight || 300);
-  return publicData();
 });
 ipcMain.handle('connect-pet', async (_event, name, pin, register = false) => {
   name = String(name || '').trim();

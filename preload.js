@@ -13,7 +13,6 @@ contextBridge.exposeInMainWorld('pet', {
   registerAiPose: image => ipcRenderer.invoke('register-ai-pose', image),
   removePose: name => ipcRenderer.invoke('remove-pose', name),
   resizePanel: height => ipcRenderer.send('resize-panel', height),
-  setTodoHeight: height => ipcRenderer.invoke('set-todo-height', height),
   connectPet: (name, pin, register) => ipcRenderer.invoke('connect-pet', name, pin, register),
   disconnectPet: () => ipcRenderer.invoke('disconnect-pet'),
   onRemote: callback => ipcRenderer.on('remote-update', (_event, data) => callback(data)),
