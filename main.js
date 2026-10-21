@@ -11,6 +11,7 @@ const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
 const { workMinutesForDay, tasksForDay } = require('./history');
 const { envelope, fitToDisplays } = require('./desktop');
+const { visibleBounds } = require('./image-bounds');
 
 let petWindow;
 let panelWindow;
@@ -61,6 +62,20 @@ function imagePath() { return path.join(app.getPath('userData'), 'character.png'
 function displayImagePath() { return fs.existsSync(imagePath()) ? imagePath() : path.join(__dirname, 'default-character.png'); }
 function posePath(name) { return path.join(app.getPath('userData'), 'poses', name); }
 function imageUrl(file) { return `${pathToFileURL(file).href}?v=${fs.statSync(file).mtimeMs}`; }
+function visibleImagePath(file) {
+  const stat = fs.statSync(file);
+  const name = createHash('sha1').update(`${file}:${stat.size}:${stat.mtimeMs}`).digest('hex') + '.png';
+  const output = path.join(app.getPath('userData'), 'visible-images', name);
+  if (fs.existsSync(output)) return output;
+  const image = nativeImage.createFromPath(file);
+  if (image.isEmpty()) return file;
+  const { width, height } = image.getSize();
+  const bounds = visibleBounds(image.toBitmap(), width, height);
+  if (bounds.width === width && bounds.height === height) return file;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, image.crop(bounds).toPNG());
+  return output;
+}
 function isPng(file) {
   const header = Buffer.alloc(8);
   const fd = fs.openSync(file, 'r');
@@ -83,13 +98,13 @@ function saveData() {
   broadcast();
 }
 function publicData() {
-  return { ...data, image: imageUrl(displayImagePath()),
+  return { ...data, image: imageUrl(visibleImagePath(displayImagePath())),
     hasAiKey: fs.existsSync(aiKeyPath()),
     workStatus: workState(new Date(), data),
     remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError,
       checked: remoteChecked, friendCount: remoteWindows.size },
     poses: (data.poseFiles || []).filter(name => /^pose-[\w-]+\.png$/.test(name) && fs.existsSync(posePath(name)))
-      .map(name => ({ name, url: imageUrl(posePath(name)) })) };
+      .map(name => ({ name, url: imageUrl(visibleImagePath(posePath(name))) })) };
 }
 function broadcast() {
   for (const win of [petWindow, panelWindow]) {
@@ -226,7 +241,7 @@ function saveRemoteSession() {
   else fs.rmSync(sessionPath(), { force: true });
 }
 function avatarData() {
-  const image = nativeImage.createFromPath(displayImagePath());
+  const image = nativeImage.createFromPath(visibleImagePath(displayImagePath()));
   if (image.isEmpty()) return null;
   const { width, height } = image.getSize();
   const scale = 128 / Math.max(width, height);
@@ -235,7 +250,7 @@ function avatarData() {
   return value.length <= 200000 ? value : null;
 }
 function poseData(file) {
-  const image = nativeImage.createFromPath(file);
+  const image = nativeImage.createFromPath(visibleImagePath(file));
   if (image.isEmpty()) return null;
   const { width, height } = image.getSize();
   const scale = Math.min(1, 128 / Math.max(width, height));
