@@ -10,7 +10,7 @@ const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
 const { workMinutesForDay, tasksForDay } = require('./history');
 const { envelope, fitToDisplays } = require('./desktop');
-const { visibleBounds } = require('./image-bounds');
+const { visibleBounds, cutoutBackground } = require('./image-bounds');
 
 let petWindow;
 let panelWindow;
@@ -89,7 +89,7 @@ function loadData() {
     .map(task => ({ ...task, completedAt: task.done ? (task.completedAt || task.day) : '' }));
   return { size: 130, bubbleOpacity: 100, tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
     lunchStart: '12:00', lunchEnd: '13:00', sessions: [], followMouse: false,
-    alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFiles: [],
+    alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFiles: [], poseSets: [],
     ...saved, fixedTasks: [], tasks };
 }
 function saveData() {
@@ -507,7 +507,13 @@ ipcMain.handle('choose-image', async () => {
   if (result.canceled) return publicData();
   const file = result.filePaths[0];
   if (!isPng(file)) throw new Error('PNG 파일을 선택해 주세요.');
-  fs.copyFileSync(file, imagePath());
+  const original = fs.readFileSync(file), image = nativeImage.createFromBuffer(original);
+  if (image.isEmpty()) throw new Error('PNG 파일을 읽을 수 없어요.');
+  const { width, height } = image.getSize();
+  if (width * height > 16_000_000) throw new Error('이미지가 너무 커요.');
+  const bitmap = image.toBitmap();
+  fs.writeFileSync(imagePath(), cutoutBackground(bitmap, width, height)
+    ? nativeImage.createFromBitmap(bitmap, { width, height }).toPNG() : original);
   broadcast();
   return publicData();
 });
@@ -518,13 +524,9 @@ ipcMain.handle('save-ai-key', (_event, key) => {
   fs.writeFileSync(aiKeyPath(), safeStorage.encryptString(key));
   return publicData();
 });
-const aiPosePrompts = {
-  sit: 'Create one new pose of this exact same character, sitting down naturally. Keep its face, colors, clothing, outline and proportions recognizable.',
-  wave: 'Create one new pose of this exact same character, waving one hand. Keep its face, colors, clothing, outline and proportions recognizable.',
-  jump: 'Create one new pose of this exact same character, in a small cheerful jump. Keep its face, colors, clothing, outline and proportions recognizable.'
-};
-ipcMain.handle('generate-ai-pose', async (_event, pose) => {
-  if (!Object.hasOwn(aiPosePrompts, pose)) throw new Error('동작을 다시 선택해 주세요.');
+ipcMain.handle('generate-ai-pose', async (_event, action) => {
+  action = String(action || '').trim();
+  if (!action || action.length > 60) throw new Error('행동을 1~60자로 적어 주세요.');
   let key;
   try { key = safeStorage.decryptString(fs.readFileSync(aiKeyPath())); }
   catch { throw new Error('설정에서 OpenAI API 키를 저장해 주세요.'); }
@@ -533,29 +535,50 @@ ipcMain.handle('generate-ai-pose', async (_event, pose) => {
   const response = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: 'gpt-image-1.5', images: [{ image_url: 'data:image/png;base64,' + fs.readFileSync(file).toString('base64') }],
-      prompt: aiPosePrompts[pose] + ' Isolate the full character on a transparent background, centered with room around all sides. No text, props, extra characters or scene.',
-      background: 'transparent', output_format: 'png', size: '1024x1024', quality: 'medium', input_fidelity: 'high' }),
+      prompt: `Create one full-body pose of the exact same character performing this action: ${action}. Each of the three outputs should be a different natural variation or phase of that action. Preserve the original face, colors, clothing, outline and proportions. Isolate only the character on a fully transparent background, centered with room around every edge. No text, props, extra characters or scene.`,
+      n: 3, background: 'transparent', output_format: 'png', size: '1024x1024', quality: 'medium', input_fidelity: 'high' }),
     signal: AbortSignal.timeout(180000) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error?.message || `이미지 생성에 실패했어요 (${response.status}).`);
-  const image = result.data?.[0]?.b64_json;
-  if (!image) throw new Error('생성된 이미지를 받지 못했어요.');
-  return 'data:image/png;base64,' + image;
+  const images = result.data?.map(item => item.b64_json);
+  if (images?.length !== 3 || images.some(image => !image)) throw new Error('동작 3장을 모두 받지 못했어요. 다시 만들어 주세요.');
+  return images.map(image => 'data:image/png;base64,' + image);
 });
-ipcMain.handle('register-ai-pose', async (_event, image) => {
-  if ((data.poseFiles || []).length >= 12) throw new Error('동작은 최대 12개까지 등록할 수 있어요.');
-  if (typeof image !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 20 * 1024 * 1024)
-    throw new Error('PNG 이미지를 다시 생성해 주세요.');
-  const bytes = Buffer.from(image.slice('data:image/png;base64,'.length), 'base64');
-  if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('PNG 이미지를 다시 생성해 주세요.');
-  const name = `pose-${randomUUID()}.png`;
-  fs.mkdirSync(path.dirname(posePath(name)), { recursive: true });
-  fs.writeFileSync(posePath(name), bytes);
-  data.poseFiles.push(name);
+ipcMain.handle('register-ai-pose', async (_event, action, images) => {
+  action = String(action || '').trim();
+  if (!action || action.length > 60 || !Array.isArray(images) || images.length !== 3) throw new Error('동작 3장을 다시 만들어 주세요.');
+  if ((data.poseFiles || []).length + 3 > 12) throw new Error('동작은 최대 12장까지 등록할 수 있어요.');
+  const files = images.map(image => {
+    if (typeof image !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 20 * 1024 * 1024)
+      throw new Error('PNG 이미지를 다시 생성해 주세요.');
+    const bytes = Buffer.from(image.slice('data:image/png;base64,'.length), 'base64');
+    if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('PNG 이미지를 다시 생성해 주세요.');
+    const png = nativeImage.createFromBuffer(bytes);
+    if (png.isEmpty()) throw new Error('PNG 이미지를 다시 생성해 주세요.');
+    const { width, height } = png.getSize();
+    if (width * height > 16_000_000) throw new Error('이미지가 너무 커요.');
+    const bitmap = png.toBitmap();
+    return cutoutBackground(bitmap, width, height) ? nativeImage.createFromBitmap(bitmap, { width, height }).toPNG() : bytes;
+  });
+  const names = files.map(() => `pose-${randomUUID()}.png`);
+  fs.mkdirSync(path.dirname(posePath(names[0])), { recursive: true });
+  for (let i = 0; i < 3; i++) fs.writeFileSync(posePath(names[i]), files[i]);
+  data.poseFiles.push(...names);
+  data.poseSets.push({ id: randomUUID(), label: action, names });
   saveData();
   let shareError = '';
   if (remoteSession) try { await queuePosePublish(); } catch { shareError = '동작은 저장됐지만 친구 공유에 실패했어요. 앱을 다시 열면 재시도해요.'; }
   return { ...publicData(), shareError };
+});
+ipcMain.handle('remove-pose-set', async (_event, id) => {
+  const set = (data.poseSets || []).find(item => item.id === id);
+  if (!set) return publicData();
+  data.poseSets = data.poseSets.filter(item => item.id !== id);
+  data.poseFiles = data.poseFiles.filter(name => !set.names.includes(name));
+  for (const name of set.names) fs.rmSync(posePath(name), { force: true });
+  saveData();
+  if (remoteSession) await queuePosePublish();
+  return publicData();
 });
 ipcMain.handle('add-poses', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'PNG 이미지', extensions: ['png'] }] });
