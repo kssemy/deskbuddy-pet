@@ -4,8 +4,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { randomUUID, createHash } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
-const { pipeline } = require('node:stream/promises');
-const { Readable } = require('node:stream');
+const { downloadVerified } = require('./update-download');
 const { step } = require('./motion');
 const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
@@ -347,15 +346,7 @@ async function installUpdate(release) {
     if (!fs.existsSync(exe)) {
       fs.mkdirSync(folder, { recursive: true });
       const zip = path.join(folder, 'download.zip');
-      const response = await fetch(release.asset.browser_download_url);
-      if (!response.ok || !response.body) throw new Error('다운로드에 실패했어요.');
-      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(zip));
-      if (fs.statSync(zip).size !== release.asset.size) throw new Error('다운로드가 끝까지 완료되지 않았어요.');
-      if (release.asset.digest?.startsWith('sha256:')) {
-        const hash = createHash('sha256');
-        for await (const chunk of fs.createReadStream(zip)) hash.update(chunk);
-        if (`sha256:${hash.digest('hex')}` !== release.asset.digest) throw new Error('다운로드 파일을 확인할 수 없어요.');
-      }
+      await downloadVerified(release.asset, zip);
       const quote = value => `'${value.replace(/'/g, "''")}'`;
       await new Promise((resolve, reject) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
         `Expand-Archive -LiteralPath ${quote(zip)} -DestinationPath ${quote(folder)} -Force`],
@@ -368,7 +359,9 @@ async function installUpdate(release) {
     app.once('will-quit', () => spawn(exe, [], { cwd: path.dirname(exe), detached: true, stdio: 'ignore', windowsHide: true }).unref());
     app.quit();
   } catch (error) {
-    await dialog.showMessageBox({ type: 'error', message: '업데이트하지 못했어요.', detail: error.message, buttons: ['확인'] });
+    const { response } = await dialog.showMessageBox({ type: 'warning', message: '자동 업데이트에 실패했어요.',
+      detail: `${error.message}\n직접 다운로드할 수 있어요.`, buttons: ['다운로드 페이지 열기', '나중에'], defaultId: 0, cancelId: 1 });
+    if (response === 0) void shell.openExternal(RELEASE_URL);
   } finally { installingUpdate = false; }
 }
 async function offerStartupUpdate() {
@@ -376,12 +369,7 @@ async function offerStartupUpdate() {
   try {
     const release = await latestRelease();
     if (!release.update || !release.asset) return;
-    const cachedExe = path.join(app.getPath('userData'), 'updates', `v${release.latest}`,
-      `DeskBuddy-Windows-${release.latest}`, 'DeskBuddy.exe');
-    if (fs.existsSync(cachedExe)) { await installUpdate(release); return; }
-    const { response } = await dialog.showMessageBox({ type: 'info', message: `DeskBuddy ${release.latest} 버전이 있어요.`,
-      detail: '다운로드가 끝나면 새 버전으로 다시 열립니다.', buttons: ['업데이트 후 실행', '나중에'], defaultId: 0, cancelId: 1 });
-    if (response === 0) await installUpdate(release);
+    await installUpdate(release);
   } catch { /* 인터넷이 없어도 기존 앱은 그대로 사용합니다. */ }
 }
 async function sendRemote() {
