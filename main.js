@@ -39,6 +39,7 @@ let remoteError = '';
 let remoteChecked = false;
 let remoteTimer;
 let remoteSyncQueue = Promise.resolve();
+let poseSyncQueue = Promise.resolve();
 let reaction = null;
 const seenReactions = new Map();
 const remoteWindows = new Map();
@@ -55,6 +56,7 @@ const today = () => {
 
 function dataPath() { return path.join(app.getPath('userData'), 'prototype.json'); }
 function sessionPath() { return path.join(app.getPath('userData'), 'pet-account-session.bin'); }
+function aiKeyPath() { return path.join(app.getPath('userData'), 'openai-key.bin'); }
 function imagePath() { return path.join(app.getPath('userData'), 'character.png'); }
 function displayImagePath() { return fs.existsSync(imagePath()) ? imagePath() : path.join(__dirname, 'default-character.png'); }
 function posePath(name) { return path.join(app.getPath('userData'), 'poses', name); }
@@ -82,6 +84,7 @@ function saveData() {
 }
 function publicData() {
   return { ...data, image: imageUrl(displayImagePath()),
+    hasAiKey: fs.existsSync(aiKeyPath()),
     workStatus: workState(new Date(), data),
     remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError,
       checked: remoteChecked, friendCount: remoteWindows.size },
@@ -231,6 +234,42 @@ function avatarData() {
     height: Math.max(1, Math.round(height * scale)), quality: 'good' }).toDataURL();
   return value.length <= 200000 ? value : null;
 }
+function poseData(file) {
+  const image = nativeImage.createFromPath(file);
+  if (image.isEmpty()) return null;
+  const { width, height } = image.getSize();
+  const scale = Math.min(1, 128 / Math.max(width, height));
+  const value = image.resize({ width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)), quality: 'good' }).toDataURL();
+  return value.length <= 200000 ? value : null;
+}
+async function publishPoses() {
+  if (!remoteSession) return;
+  const account = remoteSession.id;
+  const poses = (data.poseFiles || []).filter(name => /^pose-[\w-]+\.png$/.test(name) && fs.existsSync(posePath(name)))
+    .map((name, slot) => ({ member_id: account, slot, image: poseData(posePath(name)) }));
+  if (poses.some(pose => !pose.image)) throw new Error('친구에게 보낼 동작 PNG를 읽을 수 없어요.');
+  await remoteApi('/pet_poses?member_id=eq.' + encodeURIComponent(account), { method: 'DELETE' });
+  if (poses.length) await remoteApi('/pet_poses', { method: 'POST', body: JSON.stringify(poses) });
+  data.poseRevision = randomUUID();
+  saveData();
+  await syncRemote();
+}
+function queuePosePublish() {
+  poseSyncQueue = poseSyncQueue.then(publishPoses, publishPoses);
+  return poseSyncQueue;
+}
+async function refreshFriendPoses(id, item, revision) {
+  if (item.poseRevision === revision || item.loadingPoseRevision === revision) return;
+  item.loadingPoseRevision = revision;
+  try {
+    const rows = revision ? await remoteApi('/pet_poses?select=slot,image&member_id=eq.' + encodeURIComponent(id) + '&order=slot.asc') : [];
+    if (remoteWindows.get(id) !== item || item.loadingPoseRevision !== revision) return;
+    item.poseRevision = revision;
+    item.window.webContents.send('remote-poses', rows.map(row => row.image));
+  } catch { /* 다음 동기화 때 재시도 */ }
+  finally { if (item.loadingPoseRevision === revision) item.loadingPoseRevision = null; }
+}
 function showRemotePets(rows) {
   const active = new Set();
   const area = screen.getPrimaryDisplay().workArea;
@@ -249,8 +288,9 @@ function showRemotePets(rows) {
       window.webContents.on('context-menu', () => Menu.buildFromTemplate([
         { label: item.pinned ? '자동 이동 다시 켜기' : '여기에 고정', click: () => { item.pinned = !item.pinned; } }
       ]).popup({ window }));
-      window.webContents.once('did-finish-load', () => { window.webContents.send('remote-update', { ...row, displaySize: data.size }); showReaction(row, window); });
+      window.webContents.once('did-finish-load', () => { window.webContents.send('remote-update', { ...row, displaySize: data.size }); showReaction(row, window); void refreshFriendPoses(row.member_id, item, row.public_tasks?.find(task => task.type === 'poses')?.revision || ''); });
     } else { item.window.webContents.send('remote-update', { ...row, displaySize: data.size }); showReaction(row, item.window); }
+    if (item.window.webContents.isLoading() === false) void refreshFriendPoses(row.member_id, item, row.public_tasks?.find(task => task.type === 'poses')?.revision || '');
   }
   for (const [id, item] of remoteWindows) if (!active.has(id)) { item.window.close(); remoteWindows.delete(id); meeting.delete(id); }
 }
@@ -338,7 +378,8 @@ async function sendRemote() {
       body: JSON.stringify({ member_id: remoteSession.id, name: remoteSession.name, avatar: avatarData(), speech: data.speech || '',
         status: state,
         public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
-          .map(task => ({ text: task.text, done: task.done })), ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
+          .map(task => ({ text: task.text, done: task.done })), { type: 'poses', revision: data.poseRevision || '' },
+          ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
     const rows = await remoteApi('/pet_presence?select=*');
     const previousCount = remoteWindows.size;
     showRemotePets(rows || []);
@@ -428,7 +469,7 @@ app.whenReady().then(() => {
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false });
   movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 30);
   remoteTimer = setInterval(syncRemote, 10000);
-  if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); }
+  if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); void queuePosePublish().catch(() => {}); }
   void offerStartupUpdate();
 });
 
@@ -466,6 +507,52 @@ ipcMain.handle('choose-image', async () => {
   broadcast();
   return publicData();
 });
+ipcMain.handle('save-ai-key', (_event, key) => {
+  key = String(key || '').trim();
+  if (!/^sk-[\w-]{16,}$/.test(key)) throw new Error('OpenAI API 키를 확인해 주세요.');
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('이 PC에서는 API 키를 안전하게 저장할 수 없어요.');
+  fs.writeFileSync(aiKeyPath(), safeStorage.encryptString(key));
+  return publicData();
+});
+const aiPosePrompts = {
+  sit: 'Create one new pose of this exact same character, sitting down naturally. Keep its face, colors, clothing, outline and proportions recognizable.',
+  wave: 'Create one new pose of this exact same character, waving one hand. Keep its face, colors, clothing, outline and proportions recognizable.',
+  jump: 'Create one new pose of this exact same character, in a small cheerful jump. Keep its face, colors, clothing, outline and proportions recognizable.'
+};
+ipcMain.handle('generate-ai-pose', async (_event, pose) => {
+  if (!Object.hasOwn(aiPosePrompts, pose)) throw new Error('동작을 다시 선택해 주세요.');
+  let key;
+  try { key = safeStorage.decryptString(fs.readFileSync(aiKeyPath())); }
+  catch { throw new Error('설정에서 OpenAI API 키를 저장해 주세요.'); }
+  const file = displayImagePath();
+  if (fs.statSync(file).size > 20 * 1024 * 1024) throw new Error('기본 PNG는 20MB 이하여야 해요.');
+  const response = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'gpt-image-1.5', images: [{ image_url: 'data:image/png;base64,' + fs.readFileSync(file).toString('base64') }],
+      prompt: aiPosePrompts[pose] + ' Isolate the full character on a transparent background, centered with room around all sides. No text, props, extra characters or scene.',
+      background: 'transparent', output_format: 'png', size: '1024x1024', quality: 'medium', input_fidelity: 'high' }),
+    signal: AbortSignal.timeout(180000) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error?.message || `이미지 생성에 실패했어요 (${response.status}).`);
+  const image = result.data?.[0]?.b64_json;
+  if (!image) throw new Error('생성된 이미지를 받지 못했어요.');
+  return 'data:image/png;base64,' + image;
+});
+ipcMain.handle('register-ai-pose', async (_event, image) => {
+  if ((data.poseFiles || []).length >= 12) throw new Error('동작은 최대 12개까지 등록할 수 있어요.');
+  if (typeof image !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 20 * 1024 * 1024)
+    throw new Error('PNG 이미지를 다시 생성해 주세요.');
+  const bytes = Buffer.from(image.slice('data:image/png;base64,'.length), 'base64');
+  if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('PNG 이미지를 다시 생성해 주세요.');
+  const name = `pose-${randomUUID()}.png`;
+  fs.mkdirSync(path.dirname(posePath(name)), { recursive: true });
+  fs.writeFileSync(posePath(name), bytes);
+  data.poseFiles.push(name);
+  saveData();
+  let shareError = '';
+  if (remoteSession) try { await queuePosePublish(); } catch { shareError = '동작은 저장됐지만 친구 공유에 실패했어요. 앱을 다시 열면 재시도해요.'; }
+  return { ...publicData(), shareError };
+});
 ipcMain.handle('add-poses', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'PNG 이미지', extensions: ['png'] }] });
   if (result.canceled) return publicData();
@@ -478,13 +565,15 @@ ipcMain.handle('add-poses', async () => {
     data.poseFiles.push(name);
   }
   saveData();
+  if (remoteSession) await queuePosePublish();
   return publicData();
 });
-ipcMain.handle('remove-pose', (_event, name) => {
+ipcMain.handle('remove-pose', async (_event, name) => {
   if (!data.poseFiles.includes(name)) return publicData();
   data.poseFiles = data.poseFiles.filter(item => item !== name);
   fs.rmSync(posePath(name), { force: true });
   saveData();
+  if (remoteSession) await queuePosePublish();
   return publicData();
 });
 ipcMain.handle('set-size', (_event, value) => {
@@ -610,6 +699,7 @@ ipcMain.handle('connect-pet', async (_event, name, pin, register = false) => {
   broadcast();
   await loadAccountSchedule();
   await syncRemote();
+  await queuePosePublish();
   return publicData();
 });
 ipcMain.handle('disconnect-pet', async () => {
