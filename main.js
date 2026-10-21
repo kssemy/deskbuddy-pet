@@ -20,10 +20,14 @@ let data;
 let position;
 let ownDragStart;
 let workAreas = [];
-const FRIEND_VISUAL = { left: 35, right: 155, top: 261, bottom: 395 };
+const friendVisual = () => ({ left: (190 - data.size) / 2, right: (190 + data.size) / 2,
+  top: 381 - data.size, bottom: 395 });
 let velocity = { x: 0.55, y: 0.3 };
 let paused = false;
 let dragging = false;
+let ownPinned = false;
+let lastCursorPoint;
+let lastCursorMovedAt = 0;
 let movement;
 let speechTimer;
 let activeSession;
@@ -52,6 +56,7 @@ const today = () => {
 function dataPath() { return path.join(app.getPath('userData'), 'prototype.json'); }
 function sessionPath() { return path.join(app.getPath('userData'), 'pet-account-session.bin'); }
 function imagePath() { return path.join(app.getPath('userData'), 'character.png'); }
+function displayImagePath() { return fs.existsSync(imagePath()) ? imagePath() : path.join(__dirname, 'default-character.png'); }
 function posePath(name) { return path.join(app.getPath('userData'), 'poses', name); }
 function imageUrl(file) { return `${pathToFileURL(file).href}?v=${fs.statSync(file).mtimeMs}`; }
 function isPng(file) {
@@ -68,7 +73,7 @@ function loadData() {
     .map(task => ({ ...task, completedAt: task.done ? (task.completedAt || task.day) : '' }));
   return { size: 130, bubbleOpacity: 100, tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
     lunchStart: '12:00', lunchEnd: '13:00', sessions: [], todoHeight: null, followMouse: false,
-    alwaysOnTop: true, autoLaunch: false, poseFiles: [],
+    alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFiles: [],
     ...saved, fixedTasks: [], tasks };
 }
 function saveData() {
@@ -76,7 +81,7 @@ function saveData() {
   broadcast();
 }
 function publicData() {
-  return { ...data, image: fs.existsSync(imagePath()) ? imageUrl(imagePath()) : null,
+  return { ...data, image: imageUrl(displayImagePath()),
     workStatus: workState(new Date(), data),
     remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError,
       checked: remoteChecked, friendCount: remoteWindows.size },
@@ -111,11 +116,12 @@ function placeWindow(window, x, y) {
   }
 }
 function movePet() {
-  if (paused || dragging || panelWindow || Date.now() < moveErrorUntil || !petWindow || petWindow.isDestroyed()) return;
+  if (ownPinned || paused || dragging || panelWindow || Date.now() < moveErrorUntil || !petWindow || petWindow.isDestroyed()) return;
   const cursor = screen.getCursorScreenPoint();
   const window = petWindow.getBounds();
-  if (!data.followMouse && cursor.x >= window.x - 12 && cursor.x <= window.x + window.width + 12 &&
-      cursor.y >= window.y - 12 && cursor.y <= window.y + window.height + 12) return;
+  const visual = ownVisual();
+  if (!data.followMouse && cursor.x >= window.x + visual.left && cursor.x <= window.x + visual.right &&
+      cursor.y >= window.y + visual.top && cursor.y <= window.y + visual.bottom) return;
   const b = petBounds();
   if (data.followMouse) {
     position.x = Math.max(b.minX, Math.min(b.maxX, position.x + Math.max(-1, Math.min(1, cursor.x - 120 - position.x))));
@@ -136,21 +142,29 @@ function movePet() {
   }
 }
 function moveRemotePets() {
-  const b = envelope(workAreas, FRIEND_VISUAL);
+  const visual = friendVisual();
+  const b = envelope(workAreas, visual);
   const cursor = screen.getCursorScreenPoint();
+  if (!lastCursorPoint || cursor.x !== lastCursorPoint.x || cursor.y !== lastCursorPoint.y) {
+    lastCursorPoint = cursor;
+    lastCursorMovedAt = Date.now();
+  }
   for (const item of remoteWindows.values()) {
     if (item.window.isDestroyed()) continue;
     const bounds = item.window.getBounds();
-    const overFigure = cursor.x >= bounds.x + FRIEND_VISUAL.left && cursor.x <= bounds.x + FRIEND_VISUAL.right &&
-      cursor.y >= bounds.y + FRIEND_VISUAL.top && cursor.y <= bounds.y + FRIEND_VISUAL.bottom;
-    if (item.hovered !== overFigure && !item.dragging) {
-      item.hovered = overFigure;
-      item.window.setIgnoreMouseEvents(!overFigure, { forward: true });
+    const overFigure = cursor.x >= bounds.x + visual.left && cursor.x <= bounds.x + visual.right &&
+      cursor.y >= bounds.y + visual.top && cursor.y <= bounds.y + visual.bottom;
+    const overTodo = item.todoBounds && cursor.x >= bounds.x + item.todoBounds.left && cursor.x <= bounds.x + item.todoBounds.right &&
+      cursor.y >= bounds.y + item.todoBounds.top && cursor.y <= bounds.y + item.todoBounds.bottom;
+    const interactive = !!((overFigure && Date.now() - lastCursorMovedAt < 1500) || overTodo);
+    if (item.hovered !== interactive && !item.dragging) {
+      item.hovered = interactive;
+      item.window.setIgnoreMouseEvents(!interactive, { forward: true });
     }
     if (item.pinned || item.dragging || item.hovered) continue;
     [item.x, item.vx] = step(item.x, item.vx, b.minX, b.maxX);
     [item.y, item.vy] = step(item.y, item.vy, b.minY, b.maxY);
-    const fitted = fitToDisplays(item.x, item.y, workAreas, FRIEND_VISUAL);
+    const fitted = fitToDisplays(item.x, item.y, workAreas, visual);
     if (!placeWindow(item.window, fitted.x, fitted.y)) { item.x = item.window.getBounds().x; item.y = item.window.getBounds().y; item.vx = 0; item.vy = 0; }
   }
 }
@@ -167,7 +181,6 @@ function checkMeetings() {
     lastHighfive.set(id, Date.now());
     reaction = { type: 'highfive', id: randomUUID(), to: id, createdAt: Date.now() };
     petWindow.webContents.send('pet-reaction', 'highfive');
-    item.window.webContents.send('remote-reaction', 'highfive');
     void syncRemote();
   }
 }
@@ -181,6 +194,23 @@ async function remoteApi(route, options = {}) {
   const body = await response.text();
   return body ? JSON.parse(body) : null;
 }
+const scheduleFields = { workStart: 'work_start', workEnd: 'work_end', lunchStart: 'lunch_start', lunchEnd: 'lunch_end' };
+async function saveAccountSchedule() {
+  if (!remoteSession) return;
+  const values = Object.fromEntries(Object.entries(scheduleFields).map(([local, remote]) => [remote, data[local]]));
+  await remoteApi('/pet_schedule?on_conflict=member_id', { method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ member_id: remoteSession.id, ...values }), signal: AbortSignal.timeout(8000) });
+}
+async function loadAccountSchedule() {
+  if (!remoteSession) return;
+  const rows = await remoteApi('/pet_schedule?select=work_start,work_end,lunch_start,lunch_end&member_id=eq.' + encodeURIComponent(remoteSession.id),
+    { signal: AbortSignal.timeout(8000) });
+  if (!rows?.length) { await saveAccountSchedule(); return; }
+  for (const [local, remote] of Object.entries(scheduleFields))
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(rows[0][remote])) data[local] = rows[0][remote];
+  saveData();
+}
 function loadRemoteSession() {
   try {
     if (!safeStorage.isEncryptionAvailable()) return;
@@ -193,10 +223,12 @@ function saveRemoteSession() {
   else fs.rmSync(sessionPath(), { force: true });
 }
 function avatarData() {
-  if (!fs.existsSync(imagePath())) return null;
-  const image = nativeImage.createFromPath(imagePath());
+  const image = nativeImage.createFromPath(displayImagePath());
   if (image.isEmpty()) return null;
-  const value = image.resize({ width: 128, quality: 'good' }).toDataURL();
+  const { width, height } = image.getSize();
+  const scale = 128 / Math.max(width, height);
+  const value = image.resize({ width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)), quality: 'good' }).toDataURL();
   return value.length <= 200000 ? value : null;
 }
 function showRemotePets(rows) {
@@ -211,14 +243,14 @@ function showRemotePets(rows) {
       const y = area.y + Math.round(Math.random() * Math.max(0, area.height - 400));
       const window = makeWindow('other.html', { width: 190, height: 400, x, y, frame: false,
         transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false, hasShadow: false });
-      item = { window, x, y, vx: 0.45, vy: 0.3, hovered: false, dragging: false, pinned: false };
+      item = { window, x, y, vx: 0.55, vy: 0.3, hovered: false, dragging: false, pinned: false, todoBounds: null };
       remoteWindows.set(row.member_id, item);
       window.setIgnoreMouseEvents(true, { forward: true });
       window.webContents.on('context-menu', () => Menu.buildFromTemplate([
         { label: item.pinned ? '자동 이동 다시 켜기' : '여기에 고정', click: () => { item.pinned = !item.pinned; } }
       ]).popup({ window }));
-      window.webContents.once('did-finish-load', () => { window.webContents.send('remote-update', row); showReaction(row, window); });
-    } else { item.window.webContents.send('remote-update', row); showReaction(row, item.window); }
+      window.webContents.once('did-finish-load', () => { window.webContents.send('remote-update', { ...row, displaySize: data.size }); showReaction(row, window); });
+    } else { item.window.webContents.send('remote-update', { ...row, displaySize: data.size }); showReaction(row, item.window); }
   }
   for (const [id, item] of remoteWindows) if (!active.has(id)) { item.window.close(); remoteWindows.delete(id); meeting.delete(id); }
 }
@@ -230,8 +262,8 @@ function showReaction(row, window) {
     if (event.type === 'glow') window.webContents.send('remote-reaction', 'glow');
     if (event.type === 'poke' && event.to === remoteSession?.id) petWindow?.webContents.send('pet-reaction', 'shake');
     if (event.type === 'highfive' && event.to === remoteSession?.id) {
+      if (Date.now() - (lastHighfive.get(row.member_id) || 0) < 15000) continue;
       lastHighfive.set(row.member_id, Date.now());
-      window.webContents.send('remote-reaction', 'highfive');
       petWindow?.webContents.send('pet-reaction', 'highfive');
     }
   }
@@ -372,6 +404,7 @@ app.whenReady().then(() => {
   refreshWorkAreas();
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, refreshWorkAreas);
   data = loadData();
+  ownPinned = !!data.ownPinned;
   loadRemoteSession();
   data.sessions = (data.sessions || []).map(session => session.endedAt ? session : { ...session, endedAt: session.lastSeenAt });
   activeSession = { startedAt: Date.now(), lastSeenAt: Date.now() };
@@ -386,6 +419,7 @@ app.whenReady().then(() => {
     frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false, hasShadow: false });
   petWindow.webContents.on('context-menu', () => {
     Menu.buildFromTemplate([
+      { label: ownPinned ? '자동 이동 다시 켜기' : '여기에 고정', click: () => { ownPinned = !ownPinned; data.ownPinned = ownPinned; saveData(); } },
       { label: '설정', click: () => togglePanel('settings') },
       { label: '종료', click: () => app.quit() }
     ]).popup({ window: petWindow });
@@ -394,7 +428,7 @@ app.whenReady().then(() => {
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false });
   movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 30);
   remoteTimer = setInterval(syncRemote, 10000);
-  if (remoteSession) syncRemote();
+  if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); }
   void offerStartupUpdate();
 });
 
@@ -455,6 +489,7 @@ ipcMain.handle('remove-pose', (_event, name) => {
 });
 ipcMain.handle('set-size', (_event, value) => {
   data.size = Math.max(80, Math.min(170, Number(value) || 130));
+  for (const item of remoteWindows.values()) item.window.webContents.send('remote-size', data.size);
   saveData();
   return publicData();
 });
@@ -491,8 +526,9 @@ ipcMain.handle('set-memos', (_event, memos) => {
   saveData();
   return publicData();
 });
-ipcMain.handle('set-settings', (_event, settings) => {
+ipcMain.handle('set-settings', async (_event, settings) => {
   data.size = Math.max(80, Math.min(170, Number(settings.size) || 130));
+  for (const item of remoteWindows.values()) item.window.webContents.send('remote-size', data.size);
   for (const key of ['workStart', 'workEnd', 'lunchStart', 'lunchEnd'])
     if (/^([01]\d|2[0-3]):[0-5]\d$/.test(settings[key])) data[key] = settings[key];
   data.followMouse = !!settings.followMouse;
@@ -506,6 +542,8 @@ ipcMain.handle('set-settings', (_event, settings) => {
     { openAtLogin: data.autoLaunch, path: process.execPath, args: [app.getAppPath()] };
   app.setLoginItemSettings(loginOptions);
   saveData();
+  try { await saveAccountSchedule(); }
+  catch { throw new Error('이 PC에는 저장했지만 계정에는 저장하지 못했어요. 인터넷 연결을 확인한 뒤 다시 저장해 주세요.'); }
   return publicData();
 });
 function scheduleSpeechClear() {
@@ -570,6 +608,7 @@ ipcMain.handle('connect-pet', async (_event, name, pin, register = false) => {
   remoteChecked = false;
   remoteError = '';
   broadcast();
+  await loadAccountSchedule();
   await syncRemote();
   return publicData();
 });
@@ -589,11 +628,9 @@ ipcMain.on('hover-pet', (_event, value) => { paused = !!value; });
 function remoteItemFor(sender) {
   for (const item of remoteWindows.values()) if (item.window.webContents === sender) return item;
 }
-ipcMain.on('remote-interactive', (event, value) => {
+ipcMain.on('remote-todo-bounds', (event, bounds) => {
   const item = remoteItemFor(event.sender);
-  if (!item || item.hovered === !!value) return;
-  item.hovered = !!value;
-  if (!item.dragging) item.window.setIgnoreMouseEvents(!item.hovered, { forward: true });
+  if (item) item.todoBounds = bounds;
 });
 ipcMain.on('remote-drag-state', (event, value) => {
   const item = remoteItemFor(event.sender);
@@ -605,11 +642,12 @@ ipcMain.on('remote-drag-state', (event, value) => {
 ipcMain.on('remote-drag', (event, dx, dy) => {
   const item = remoteItemFor(event.sender);
   if (!item || !item.dragging || !item.dragStart || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
-  const b = envelope(workAreas, FRIEND_VISUAL);
+  const visual = friendVisual();
+  const b = envelope(workAreas, visual);
   const x = Math.max(b.minX, Math.min(b.maxX, item.dragStart.x + dx));
   const y = Math.max(b.minY, Math.min(b.maxY, item.dragStart.y + dy));
-  const fitted = fitToDisplays(x, y, workAreas, FRIEND_VISUAL);
-  if (placeWindow(item.window, fitted.x, fitted.y)) { item.x = fitted.x; item.y = fitted.y; item.pinned = true; }
+  const fitted = fitToDisplays(x, y, workAreas, visual);
+  if (placeWindow(item.window, fitted.x, fitted.y)) { item.x = fitted.x; item.y = fitted.y; }
 });
 ipcMain.on('drag-pet-start', event => { if (event.sender === petWindow?.webContents) ownDragStart = petWindow.getBounds(); });
 ipcMain.on('drag-pet-end', event => { if (event.sender === petWindow?.webContents) ownDragStart = null; });

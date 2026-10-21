@@ -7,12 +7,12 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; width: 240px; height: 250px; overflow: hidden; background: transparent; }
   body { display: grid; place-items: center; user-select: none; }
-  #pet { position: relative; width: 230px; height: 240px; display: grid; place-items: end center; cursor: grab; touch-action: none; }
-  #pet:active { cursor: grabbing; }
+  #pet { position: relative; width: 230px; height: 240px; display: grid; place-items: end center; cursor: default; touch-action: none; }
   #figure { width: var(--size, 130px); height: var(--size, 130px); margin-bottom: 28px; object-fit: contain;
-    pointer-events: none; animation: float 2s ease-in-out infinite; }
-  #fallback { font-size: var(--size, 130px); line-height: 1; margin-bottom: 28px; pointer-events: none;
+    cursor: grab; animation: float 2s ease-in-out infinite; }
+  #fallback { font-size: var(--size, 130px); line-height: 1; margin-bottom: 28px; cursor: grab;
     animation: float 2s ease-in-out infinite; }
+  #figure:active,#fallback:active { cursor: grabbing; }
   #speech { position: absolute; bottom: calc(var(--size, 130px) + 39px); left: 50%; transform: translateX(-50%); opacity: var(--bubble-opacity, 1);
     width: max-content; max-width: 170px; max-height: 55px; overflow: hidden;
     padding: 6px 8px; border: 0; border-radius: 12px; background: #fffaf5;
@@ -24,8 +24,8 @@
     font: bold 12px sans-serif; line-height: 14px; cursor: pointer; }
   #glowButton { position:absolute;bottom:calc(var(--size,130px) - 8px);left:calc(50% + var(--size,130px) / 2 + 10px);width:9px;height:9px;padding:0;border:0;border-radius:50%;background:#e9cc9c;opacity:var(--chat-opacity,.7);cursor:pointer }
   #pet.glowing #figure,#pet.glowing #fallback{filter:drop-shadow(0 0 10px #ffd45d) drop-shadow(0 0 19px #ffc238)}
-  #pet.shaking #figure,#pet.shaking #fallback{animation:shake .12s linear 8}
-  #pet.highfive:after{content:'🙌✨';position:absolute;bottom:calc(var(--size,130px) + 55px);left:50%;transform:translateX(-50%);font-size:26px;pointer-events:none;animation:highfive 1.2s ease-out forwards}
+  #pet.shaking #figure,#pet.shaking #fallback{animation:shake .24s linear 1}
+  #pet.highfive:after{content:'🙌';position:absolute;bottom:calc(var(--size,130px) + 55px);left:50%;transform:translateX(-50%);font-size:26px;pointer-events:none;animation:highfive 1.2s ease-out forwards}
   @keyframes highfive{to{opacity:0;transform:translate(-50%,-28px)}}
   @keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
   #workStatus { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; color: #4f3b31;
@@ -37,7 +37,7 @@
   <div id="speech" hidden><span id="speechText"></span><span id="countdown" hidden></span></div>
   <button id="chatButton" type="button" aria-label="한마디 입력">···</button>
   <button id="glowButton" type="button" aria-label="여기 보세요! 빛나기" title="여기 보세요!"></button>
-  <img id="figure" alt="내 캐릭터" hidden>
+  <img id="figure" alt="내 캐릭터" draggable="false" hidden>
   <div id="fallback">🐻</div>
   <div id="workStatus"></div>
 </div>
@@ -82,15 +82,14 @@
   }, 8000);
   window.pet.load().then(render);
   window.pet.onChange(render);
-  petElement.addEventListener('pointerenter', () => window.pet.hover(true));
-  petElement.addEventListener('pointerleave', () => window.pet.hover(false));
+  document.addEventListener('dragstart', event => event.preventDefault());
+  for (const figure of [image, fallback]) {
+    figure.addEventListener('pointerenter', () => window.pet.hover(true));
+    figure.addEventListener('pointerleave', () => window.pet.hover(false));
+  }
   let last, moved;
   petElement.addEventListener('pointerdown', event => {
-    if (event.button !== 0) return;
-    const figure = image.hidden ? fallback : image;
-    const bounds = figure.getBoundingClientRect();
-    if (event.clientX < bounds.left || event.clientX > bounds.right ||
-        event.clientY < bounds.top || event.clientY > bounds.bottom) return;
+    if (event.button !== 0 || ![image, fallback].includes(event.target)) return;
     last = { x: event.screenX, y: event.screenY };
     moved = false;
     window.pet.dragStart();
@@ -107,7 +106,7 @@
   });
   petElement.addEventListener('pointerup', () => { last = null; window.pet.dragEnd(); });
   petElement.addEventListener('pointercancel', () => { last = null; window.pet.dragEnd(); });
-  petElement.addEventListener('click', () => { if (!moved) window.pet.togglePanel(); });
+  petElement.addEventListener('click', event => { if (!moved && [image, fallback].includes(event.target)) window.pet.togglePanel(); });
   chatButton.addEventListener('pointerdown', event => event.stopPropagation());
   chatButton.addEventListener('click', event => {
     event.stopPropagation();

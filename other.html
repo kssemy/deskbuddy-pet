@@ -2,23 +2,24 @@
 <style>
 *{box-sizing:border-box}html,body{margin:0;width:190px;height:400px;overflow:hidden;background:transparent;color:#4f3b31;font:11px/1.3 sans-serif;user-select:none}
 #other{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:5px;cursor:default}
-#avatar,#fallback,#status{cursor:grab}
+#avatar,#fallback{width:var(--size,130px);height:var(--size,130px);object-fit:contain;cursor:grab}
 #speech{max-width:170px;max-height:65px;padding:5px 7px;border-radius:10px;background:#fffaf5;overflow:hidden;overflow-wrap:anywhere}
-#avatar{width:120px;height:120px;object-fit:contain;animation:float 2s ease-in-out infinite}
+#avatar{animation:float 2s ease-in-out infinite}
 #other.glowing #avatar,#other.glowing #fallback{filter:drop-shadow(0 0 10px #ffd45d) drop-shadow(0 0 19px #ffc238)}
-#other.shaking #avatar,#other.shaking #fallback{animation:shake .12s linear 8}
-#other.highfive:after{content:'🙌✨';position:absolute;bottom:165px;left:50%;transform:translateX(-50%);font-size:26px;pointer-events:none;animation:highfive 1.2s ease-out forwards}
+#other.shaking #avatar,#other.shaking #fallback{animation:shake .24s linear 1}
+#other.highfive:after{content:'🙌';position:absolute;bottom:calc(var(--size,130px) + 45px);left:50%;transform:translateX(-50%);font-size:26px;pointer-events:none;animation:highfive 1.2s ease-out forwards}
 @keyframes highfive{to{opacity:0;transform:translate(-50%,-28px)}}
 @keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
-#fallback{font-size:100px;line-height:1;animation:float 2s ease-in-out infinite}
+#fallback{animation:float 2s ease-in-out infinite}
 #status{max-width:185px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#todo{position:absolute;left:8px;right:8px;bottom:calc(151px + var(--speech-height,0px));max-height:150px;padding:10px;border-radius:14px;background:#fffaf5;overflow:auto}
+#todo{position:absolute;left:8px;right:8px;bottom:calc(var(--size,130px) + 31px + var(--speech-height,0px));max-height:150px;padding:10px;border-radius:14px;background:#fffaf5;overflow:auto}
 #todo h2{font-size:13px;margin:0 0 8px}#todo ul{padding-left:18px;margin:0}#todo li{margin:5px 0;overflow-wrap:anywhere}
 [hidden]{display:none!important}@keyframes float{50%{transform:translateY(-4px) rotate(1deg)}}
 </style>
-<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" draggable="false" hidden><div id="fallback">🐻</div><div id="status"></div><div id="todo" hidden><h2>공개 TO DO</h2><ul></ul></div></div>
+<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" draggable="false" hidden><img id="fallback" src="default-character.png" alt="친구 캐릭터" draggable="false"><div id="status"></div><div id="todo" hidden><h2>공개 TO DO</h2><ul></ul></div></div>
 <script>
 window.pet.onRemote(data=>{
+ document.documentElement.style.setProperty('--size',`${data.displaySize||130}px`);
  const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&data.avatar.startsWith('data:image/png;base64,');
  avatar.hidden=!valid;document.querySelector('#fallback').hidden=valid;
  if(valid&&avatar.src!==data.avatar)avatar.src=data.avatar;
@@ -28,20 +29,21 @@ window.pet.onRemote(data=>{
  const list=document.querySelector('#todo ul');list.replaceChildren();
  for(const task of Array.isArray(data.public_tasks)?data.public_tasks:[]){if(task.type)continue;const li=document.createElement('li');li.textContent=(task.done?'✓ ':'□ ')+String(task.text||'');list.append(li)}
  if(!list.children.length){const li=document.createElement('li');li.textContent='공개된 할 일이 없어요.';list.append(li)}
+ reportTodoBounds();
 });
+window.pet.onRemoteSize(size=>{document.documentElement.style.setProperty('--size',`${size}px`);reportTodoBounds()});
 const other=document.querySelector('#other');
 let last=null,moved=false;
 document.addEventListener('dragstart',event=>event.preventDefault());
-function interactive(target){return !!target.closest('#avatar:not([hidden]),#fallback:not([hidden]),#status,#todo:not([hidden])')}
+function reportTodoBounds(){const todo=document.querySelector('#todo');window.pet.remoteTodoBounds(todo.hidden?null:{left:todo.offsetLeft,right:todo.offsetLeft+todo.offsetWidth,top:todo.offsetTop,bottom:todo.offsetTop+todo.offsetHeight})}
 other.addEventListener('pointermove',event=>{
- window.pet.remoteInteractive(interactive(event.target));
  if(!last)return;
  const dx=event.screenX-last.x,dy=event.screenY-last.y;
  if(Math.abs(dx)+Math.abs(dy)>6){moved=true;window.pet.dragRemote(dx,dy)}
 });
 other.addEventListener('pointerdown',event=>{
  moved=false;
- if(event.button!==0||!event.target.closest('#avatar:not([hidden]),#fallback:not([hidden]),#status'))return;
+ if(event.button!==0||!event.target.closest('#avatar:not([hidden]),#fallback:not([hidden])'))return;
  last={x:event.screenX,y:event.screenY};other.setPointerCapture(event.pointerId);window.pet.remoteDragState(true);
 });
 let clicks=0,clickTimer;
@@ -51,12 +53,12 @@ function endDrag(event){
  last=null;window.pet.remoteDragState(false);
  if(wasClick){
   const todo=document.querySelector('#todo');todo.hidden=!todo.hidden;
+  reportTodoBounds();
   clicks++;clearTimeout(clickTimer);clickTimer=setTimeout(()=>clicks=0,800);
   if(clicks>=3){clicks=0;window.pet.pokeFriend()}
  }
 }
 other.addEventListener('pointerup',endDrag);
 other.addEventListener('pointercancel',endDrag);
-other.addEventListener('pointerleave',()=>{if(!last)window.pet.remoteInteractive(false)});
 window.pet.onReaction(value=>{const name=value==='glow'?'glowing':value==='highfive'?'highfive':'shaking';other.classList.remove(name);void other.offsetWidth;other.classList.add(name);setTimeout(()=>other.classList.remove(name),1200)});
 </script></html>
