@@ -28,4 +28,11 @@ function homeSlot(area, size, index) {
     y: area.y + 75 + Math.floor(index / columns) * (size + 85) };
 }
 
-module.exports = { envelope, fitToDisplays, homeSlot };
+function resizeAnchoredPanel(bounds, area, requested, placement) {
+  const bottom = bounds.y + bounds.height;
+  const height = Math.max(1, Math.min(requested, area.height - 16,
+    placement === 'below' ? area.y + area.height - bounds.y : bottom - area.y));
+  return { ...bounds, y: placement === 'below' ? bounds.y : bottom - height, height };
+}
+
+module.exports = { envelope, fitToDisplays, homeSlot, resizeAnchoredPanel };

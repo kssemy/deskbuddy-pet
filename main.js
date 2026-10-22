@@ -9,7 +9,7 @@ const { step } = require('./motion');
 const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
 const { workMinutesForDay, tasksForDay } = require('./history');
-const { envelope, fitToDisplays, homeSlot } = require('./desktop');
+const { envelope, fitToDisplays, homeSlot, resizeAnchoredPanel } = require('./desktop');
 const { visibleBounds, cutoutBackground } = require('./image-bounds');
 
 let petWindow;
@@ -17,6 +17,7 @@ let panelWindow;
 let topWindow;
 let updateWindow;
 let panelMode;
+let panelPlacement;
 let data;
 let homeLayout;
 let position;
@@ -523,6 +524,7 @@ function togglePanel(mode = 'tasks') {
       panelMode = mode;
       const bounds = panelBounds(mode);
       const { placement, ...windowBounds } = bounds;
+      panelPlacement = placement;
       panelWindow.setBounds(windowBounds);
       panelWindow.loadFile(path.join(__dirname, file), { query: { mode, placement: bounds.placement } });
     }
@@ -531,10 +533,11 @@ function togglePanel(mode = 'tasks') {
   const bounds = panelBounds(mode);
   const { placement, ...windowBounds } = bounds;
   panelMode = mode;
+  panelPlacement = placement;
   panelWindow = makeWindow(file, { ...windowBounds,
     frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false,
     hasShadow: false, title: '캐릭터 말풍선' }, { placement, mode });
-  panelWindow.on('closed', () => { panelWindow = null; panelMode = null; });
+  panelWindow.on('closed', () => { panelWindow = null; panelMode = null; panelPlacement = null; });
 }
 function panelBounds(mode) {
   const { x, y } = petWindow.getBounds();
@@ -542,10 +545,10 @@ function panelBounds(mode) {
   const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'wardrobe' ? Math.min(420, area.width - 16) : mode === 'settings' ? 280 : 240;
   const height = Math.min(mode === 'tasks' ? 300 : mode === 'history' ? 650 : mode === 'wardrobe' ? 520 : mode === 'settings' ? 590 : 66, area.height - 16);
   const figureTop = y + 217 - data.size;
-  const placement = figureTop - height >= area.y ? 'above' : 'below';
+  const placement = figureTop - height - 8 >= area.y ? 'above' : 'below';
   return { width, height, placement,
     x: Math.round(Math.max(area.x, Math.min(x + 120 - width / 2, area.x + area.width - width))),
-    y: Math.round(Math.max(area.y, Math.min(placement === 'above' ? figureTop - height + 12 : y + 217, area.y + area.height - height))) };
+    y: Math.round(Math.max(area.y, Math.min(placement === 'above' ? figureTop - height - 8 : y + 225, area.y + area.height - height))) };
 }
 function resizeTaskPanel(height) {
   if (!panelWindow || panelWindow.isDestroyed() || panelMode !== 'tasks') return;
@@ -553,9 +556,8 @@ function resizeTaskPanel(height) {
   if (!Number.isFinite(requested)) return;
   const bounds = panelWindow.getBounds();
   const area = screen.getDisplayMatching(bounds).workArea;
-  const bottom = bounds.y + bounds.height;
-  const nextHeight = Math.min(requested, area.height - 16, bottom - area.y);
-  if (nextHeight !== bounds.height) panelWindow.setBounds({ ...bounds, y: bottom - nextHeight, height: nextHeight });
+  const next = resizeAnchoredPanel(bounds, area, requested, panelPlacement);
+  if (next.height !== bounds.height || next.y !== bounds.y) panelWindow.setBounds(next);
 }
 
 app.whenReady().then(() => {
