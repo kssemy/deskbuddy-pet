@@ -45,6 +45,7 @@ let poseSyncQueue = Promise.resolve();
 let reaction = null;
 let pendingRelease;
 let ignoredRelease;
+let lastUpdateCheck = Date.now();
 const seenReactions = new Map();
 const remoteWindows = new Map();
 const meeting = new Set();
@@ -412,7 +413,9 @@ async function offerStartupUpdate() {
   } catch { /* 인터넷이 없어도 기존 앱은 그대로 사용합니다. */ }
 }
 async function checkForRunningUpdate() {
-  if (path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe' || installingUpdate) return;
+  if (path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe' || installingUpdate ||
+      Date.now() - lastUpdateCheck < 30 * 60 * 1000) return;
+  lastUpdateCheck = Date.now();
   try {
     const release = await latestRelease();
     if (!release.update || !release.asset || ignoredRelease === release.latest) return;
@@ -568,8 +571,8 @@ app.whenReady().then(() => {
   petWindow = makeWindow('pet.html', { width: 240, height: 250, x: position.x, y: position.y,
     frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: false, resizable: false,
     hasShadow: false, icon: path.join(__dirname, 'default-character.png') });
-  petWindow.on('focus', () => refreshAllOnTop(true));
-  petWindow.on('restore', () => refreshAllOnTop(true));
+  petWindow.on('focus', () => { refreshAllOnTop(true); void checkForRunningUpdate(); });
+  petWindow.on('restore', () => { refreshAllOnTop(true); void checkForRunningUpdate(); });
   petWindow.webContents.on('context-menu', () => {
     Menu.buildFromTemplate([
       { label: ownPinned ? '자동 이동 다시 켜기' : '여기에 고정', click: () => { ownPinned = !ownPinned; data.ownPinned = ownPinned; saveData(); } },
@@ -584,7 +587,6 @@ app.whenReady().then(() => {
   remoteTimer = setInterval(syncRemote, 10000);
   if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); void queuePosePublish().catch(() => {}); }
   void offerStartupUpdate();
-  setInterval(checkForRunningUpdate, 10 * 60 * 1000);
 });
 
 ipcMain.handle('load', () => publicData());
