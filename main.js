@@ -99,9 +99,11 @@ function loadData() {
     .map(task => ({ ...task, completedAt: task.done ? (task.completedAt || task.day) : '' }));
   return { size: 130, bubbleOpacity: 100, tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
     lunchStart: '12:00', lunchEnd: '13:00', sessions: [], followMouse: false,
-    alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFiles: [], poseSets: [],
+    alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFilesByCharacter: {},
     wardrobe: [], characterHistory: [], currentCharacterId: 'default',
-    ...saved, fixedTasks: [], tasks };
+    ...saved, fixedTasks: [], tasks,
+    poseFilesByCharacter: saved.poseFilesByCharacter || { [saved.currentCharacterId || 'default']: saved.poseFiles || [] },
+    poseFiles: [], poseSets: [] };
 }
 function rememberCharacter(bytes, label) {
   const id = createHash('sha256').update(bytes).digest('hex');
@@ -114,21 +116,26 @@ function rememberCharacter(bytes, label) {
 }
 function wardrobeData() {
   const defaultFile = path.join(__dirname, 'default-character.png');
-  return [{ id: 'default', label: '기본 캐릭터', url: imageUrl(visibleImagePath(defaultFile)), active: data.currentCharacterId === 'default' },
+  return [{ id: 'default', label: '기본 캐릭터', url: imageUrl(visibleImagePath(defaultFile)), active: data.currentCharacterId === 'default', poses: posesFor('default') },
     ...data.wardrobe.filter(item => /^[a-f0-9]{64}$/.test(item.id) && fs.existsSync(wardrobePath(item.id))).map(item => ({ ...item,
-      url: imageUrl(visibleImagePath(wardrobePath(item.id))), active: data.currentCharacterId === item.id }))];
+      url: imageUrl(visibleImagePath(wardrobePath(item.id))), active: data.currentCharacterId === item.id, poses: posesFor(item.id) }))];
+}
+function posesFor(id) {
+  return (data.poseFilesByCharacter?.[id] || []).filter(name => /^pose-[\w-]+\.png$/.test(name) && fs.existsSync(posePath(name)))
+    .map(name => ({ name, url: imageUrl(visibleImagePath(posePath(name))) }));
 }
 function selectCharacter(id) {
   if (id !== 'default' && (!/^[a-f0-9]{64}$/.test(id) || !data.wardrobe.some(item => item.id === id && fs.existsSync(wardrobePath(id)))))
     throw new Error('옷장에 없는 캐릭터예요.');
   if (id === 'default') fs.rmSync(imagePath(), { force: true });
   else fs.copyFileSync(wardrobePath(id), imagePath());
-  if (data.currentCharacterId !== id) {
+  const changed = data.currentCharacterId !== id;
+  if (changed) {
     data.currentCharacterId = id;
     data.characterHistory.push({ id, at: Date.now() });
   }
   saveData();
-  void syncRemote();
+  if (changed && remoteSession) void queuePosePublish().catch(() => {});
   return publicData();
 }
 function saveData() {
@@ -136,13 +143,13 @@ function saveData() {
   broadcast();
 }
 function publicData() {
+  const wardrobe = wardrobeData();
   return { ...data, image: imageUrl(visibleImagePath(displayImagePath())),
-    wardrobe: wardrobeData(),
+    wardrobe,
     workStatus: workState(new Date(), data),
     remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError,
       checked: remoteChecked, friendCount: remoteWindows.size },
-    poses: (data.poseFiles || []).filter(name => /^pose-[\w-]+\.png$/.test(name) && fs.existsSync(posePath(name)))
-      .map(name => ({ name, url: imageUrl(visibleImagePath(posePath(name))) })) };
+    poses: wardrobe.find(item => item.id === data.currentCharacterId)?.poses || [] };
 }
 function broadcast() {
   for (const win of [petWindow, panelWindow]) {
@@ -300,7 +307,7 @@ function poseData(file) {
 async function publishPoses() {
   if (!remoteSession) return;
   const account = remoteSession.id;
-  const poses = (data.poseFiles || []).filter(name => /^pose-[\w-]+\.png$/.test(name) && fs.existsSync(posePath(name)))
+  const poses = (data.poseFilesByCharacter?.[data.currentCharacterId] || []).filter(name => /^pose-[\w-]+\.png$/.test(name) && fs.existsSync(posePath(name)))
     .map((name, slot) => ({ member_id: account, slot, image: poseData(posePath(name)) }));
   if (poses.some(pose => !pose.image)) throw new Error('친구에게 보낼 동작 PNG를 읽을 수 없어요.');
   await remoteApi('/pet_poses?member_id=eq.' + encodeURIComponent(account), { method: 'DELETE' });
@@ -555,7 +562,12 @@ app.whenReady().then(() => {
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, refreshWorkAreas);
   data = loadData();
   if (fs.existsSync(imagePath()) && data.currentCharacterId === 'default') {
-    data.currentCharacterId = rememberCharacter(fs.readFileSync(imagePath()), '기존 캐릭터');
+    const id = rememberCharacter(fs.readFileSync(imagePath()), '기존 캐릭터');
+    if (data.poseFilesByCharacter.default?.length) {
+      data.poseFilesByCharacter[id] = [...(data.poseFilesByCharacter[id] || []), ...data.poseFilesByCharacter.default];
+      delete data.poseFilesByCharacter.default;
+    }
+    data.currentCharacterId = id;
     data.characterHistory.push({ id: data.currentCharacterId, at: Date.now() });
   }
   ownPinned = !!data.ownPinned;
@@ -639,49 +651,45 @@ ipcMain.handle('delete-character', (_event, id) => {
   if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw new Error('옷장에 없는 캐릭터예요.');
   const index = data.wardrobe.findIndex(item => item.id === id);
   if (index < 0) throw new Error('옷장에 없는 캐릭터예요.');
-  if (data.currentCharacterId === id) {
+  const wasActive = data.currentCharacterId === id;
+  if (wasActive) {
     fs.rmSync(imagePath(), { force: true });
     data.currentCharacterId = 'default';
     data.characterHistory.push({ id: 'default', at: Date.now() });
   }
   data.wardrobe.splice(index, 1);
   data.characterHistory = data.characterHistory.filter(item => item.id !== id);
+  for (const name of data.poseFilesByCharacter[id] || []) fs.rmSync(posePath(name), { force: true });
+  delete data.poseFilesByCharacter[id];
   fs.rmSync(wardrobePath(id), { force: true });
   saveData();
-  void syncRemote();
+  if (wasActive && remoteSession) void queuePosePublish().catch(() => {});
   return publicData();
 });
-ipcMain.handle('remove-pose-set', async (_event, id) => {
-  const set = (data.poseSets || []).find(item => item.id === id);
-  if (!set) return publicData();
-  data.poseSets = data.poseSets.filter(item => item.id !== id);
-  data.poseFiles = data.poseFiles.filter(name => !set.names.includes(name));
-  for (const name of set.names) fs.rmSync(posePath(name), { force: true });
-  saveData();
-  if (remoteSession) await queuePosePublish();
-  return publicData();
-});
-ipcMain.handle('add-poses', async () => {
+ipcMain.handle('add-poses', async (_event, id) => {
+  if (!wardrobeData().some(item => item.id === id)) throw new Error('옷장에 없는 캐릭터예요.');
   const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'PNG 이미지', extensions: ['png'] }] });
   if (result.canceled) return publicData();
-  if ((data.poseFiles || []).length + result.filePaths.length > 12) throw new Error('동작 PNG는 최대 12개까지 올릴 수 있어요.');
+  const files = data.poseFilesByCharacter[id] ||= [];
+  if (files.length + result.filePaths.length > 12) throw new Error('캐릭터당 동작 PNG는 최대 12개까지 올릴 수 있어요.');
   for (const file of result.filePaths) if (!isPng(file)) throw new Error('PNG 파일만 올려주세요.');
   fs.mkdirSync(path.dirname(posePath('x')), { recursive: true });
   for (const file of result.filePaths) {
     const name = `pose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
     fs.copyFileSync(file, posePath(name));
-    data.poseFiles.push(name);
+    files.push(name);
   }
   saveData();
-  if (remoteSession) await queuePosePublish();
+  if (remoteSession && id === data.currentCharacterId) await queuePosePublish();
   return publicData();
 });
-ipcMain.handle('remove-pose', async (_event, name) => {
-  if (!data.poseFiles.includes(name)) return publicData();
-  data.poseFiles = data.poseFiles.filter(item => item !== name);
+ipcMain.handle('remove-pose', async (_event, id, name) => {
+  const files = data.poseFilesByCharacter[id];
+  if (!files?.includes(name)) return publicData();
+  data.poseFilesByCharacter[id] = files.filter(item => item !== name);
   fs.rmSync(posePath(name), { force: true });
   saveData();
-  if (remoteSession) await queuePosePublish();
+  if (remoteSession && id === data.currentCharacterId) await queuePosePublish();
   return publicData();
 });
 ipcMain.handle('set-size', (_event, value) => {
