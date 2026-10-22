@@ -54,7 +54,7 @@
   const countdown = document.querySelector('#countdown');
   const chatButton = document.querySelector('#chatButton');
   const status = document.querySelector('#workStatus');
-  let baseImage = null, poses = [], poseIndex = 0, poseIntervalSeconds = 0, poseTimer, poseRestoreTimer, poseActive = false;
+  let baseImage = null, poses = [], poseIndex = 0, poseIntervalSeconds = 0, poseTimer, poseActive = false;
   let expiresAt = 0;
   function updateCountdown() {
     const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
@@ -69,7 +69,6 @@
     const nextPoses = (data.poses || []).map(pose => pose.url);
     if (baseImage !== data.image || poses.join('|') !== nextPoses.join('|')) {
       poseIndex = 0;
-      clearTimeout(poseRestoreTimer);
       poseActive = false;
     }
     baseImage = data.image;
@@ -94,10 +93,9 @@
   setInterval(updateCountdown, 200);
   function showNextPose() {
     if (!baseImage || !poses.length) return;
-    poseActive = true;
-    image.src = poses[poseIndex++ % poses.length];
-    clearTimeout(poseRestoreTimer);
-    poseRestoreTimer = setTimeout(() => { poseActive = false; if (baseImage) image.src = baseImage; }, 1800);
+    poseActive = poseIndex < poses.length;
+    image.src = poseActive ? poses[poseIndex++] : baseImage;
+    if (!poseActive) poseIndex = 0;
   }
   window.pet.load().then(render);
   window.pet.onChange(render);

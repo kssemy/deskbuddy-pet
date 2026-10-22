@@ -28,7 +28,7 @@ window.pet.onRemote(data=>{
  document.documentElement.style.setProperty('--size',`${data.displaySize||130}px`);
  const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&data.avatar.startsWith('data:image/png;base64,');
  avatar.hidden=!valid;document.querySelector('#fallback').hidden=valid;
- if(valid&&baseAvatar!==data.avatar){baseAvatar=data.avatar;friendPoseIndex=0;if(!friendPoseActive)avatar.src=baseAvatar}
+ if(valid&&baseAvatar!==data.avatar){baseAvatar=data.avatar;friendPoseIndex=0;friendPoseActive=false;avatar.src=baseAvatar}
  const seconds=Math.max(2,Math.min(12,Number(data.public_tasks?.find(task=>task.type==='poses')?.intervalSeconds)||8));
  if(seconds!==friendPoseIntervalSeconds){friendPoseIntervalSeconds=seconds;clearInterval(friendPoseTimer);friendPoseTimer=setInterval(showFriendPose,seconds*1000)}
  document.querySelector('#status').textContent=data.status||'';
@@ -42,8 +42,8 @@ window.pet.onRemote(data=>{
  reportTodoBounds();
 });
 setInterval(()=>{if(remoteExpiresAt&&Date.now()>=remoteExpiresAt)document.querySelector('#speech').classList.add('popping')},200);
-window.pet.onRemotePoses(poses=>{friendPoses=Array.isArray(poses)?poses.filter(image=>typeof image==='string'&&image.startsWith('data:image/png;base64,')):[];friendPoseIndex=0});
-function showFriendPose(){if(!baseAvatar||!friendPoses.length)return;const avatar=document.querySelector('#avatar');friendPoseActive=true;avatar.src=friendPoses[friendPoseIndex++%friendPoses.length];setTimeout(()=>{friendPoseActive=false;avatar.src=baseAvatar},1800)}
+window.pet.onRemotePoses(poses=>{friendPoses=Array.isArray(poses)?poses.filter(image=>typeof image==='string'&&image.startsWith('data:image/png;base64,')):[];friendPoseIndex=0;friendPoseActive=false;if(baseAvatar)document.querySelector('#avatar').src=baseAvatar});
+function showFriendPose(){if(!baseAvatar||!friendPoses.length)return;friendPoseActive=friendPoseIndex<friendPoses.length;document.querySelector('#avatar').src=friendPoseActive?friendPoses[friendPoseIndex++]:baseAvatar;if(!friendPoseActive)friendPoseIndex=0}
 friendPoseTimer=setInterval(showFriendPose,8000);
 window.pet.onRemoteSize(size=>{document.documentElement.style.setProperty('--size',`${size}px`);reportTodoBounds()});
 const other=document.querySelector('#other');
