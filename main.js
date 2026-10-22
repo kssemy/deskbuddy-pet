@@ -414,7 +414,7 @@ async function offerStartupUpdate() {
 }
 async function checkForRunningUpdate() {
   if (path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe' || installingUpdate ||
-      Date.now() - lastUpdateCheck < 30 * 60 * 1000) return;
+      Date.now() - lastUpdateCheck < 60 * 1000) return;
   lastUpdateCheck = Date.now();
   try {
     const release = await latestRelease();
