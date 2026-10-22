@@ -460,8 +460,12 @@ function keepOnTop(win) {
   win.setAlwaysOnTop(true, 'screen-saver');
   win.moveTop();
 }
-function refreshAllOnTop() {
-  for (const win of [...[...remoteWindows.values()].map(item => item.window), petWindow, panelWindow, updateWindow, topWindow]) keepOnTop(win);
+function refreshAllOnTop(bringForward = false) {
+  for (const win of [...[...remoteWindows.values()].map(item => item.window), petWindow, panelWindow, updateWindow, topWindow]) {
+    if (!win || win.isDestroyed() || !win.isVisible()) continue;
+    if (bringForward && !data.alwaysOnTop) win.moveTop();
+    else keepOnTop(win);
+  }
 }
 function arrangeHome() {
   if (homeLayout) {
@@ -564,8 +568,8 @@ app.whenReady().then(() => {
   petWindow = makeWindow('pet.html', { width: 240, height: 250, x: position.x, y: position.y,
     frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: false, resizable: false,
     hasShadow: false, icon: path.join(__dirname, 'default-character.png') });
-  petWindow.on('focus', refreshAllOnTop);
-  petWindow.on('restore', refreshAllOnTop);
+  petWindow.on('focus', () => refreshAllOnTop(true));
+  petWindow.on('restore', () => refreshAllOnTop(true));
   petWindow.webContents.on('context-menu', () => {
     Menu.buildFromTemplate([
       { label: ownPinned ? '자동 이동 다시 켜기' : '여기에 고정', click: () => { ownPinned = !ownPinned; data.ownPinned = ownPinned; saveData(); } },
