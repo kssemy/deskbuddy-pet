@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { envelope, fitToDisplays } = require('./desktop');
+const { envelope, fitToDisplays, homeSlot } = require('./desktop');
 
 test('friend PNG reaches every edge and crosses two monitors', () => {
   const areas = [{ x: 0, y: 0, width: 1920, height: 1080 }, { x: 1920, y: 100, width: 1280, height: 900 }];
@@ -12,4 +12,11 @@ test('friend PNG reaches every edge and crosses two monitors', () => {
   const own = { left: 55, right: 185, top: 87, bottom: 240 };
   assert.deepEqual(envelope(areas, own), { minX: -55, maxX: 3015, minY: -87, maxY: 840 });
   assert.deepEqual(fitToDisplays(3015, 500, areas, own), { x: 3015, y: 500 });
+});
+
+test('home button fills the upper right and wraps without overlap', () => {
+  const area = { x: 0, y: 0, width: 400, height: 700 };
+  assert.deepEqual([0, 1, 2].map(index => homeSlot(area, 130, index)), [
+    { x: 258, y: 75 }, { x: 116, y: 75 }, { x: 258, y: 290 }
+  ]);
 });

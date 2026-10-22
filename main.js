@@ -9,14 +9,16 @@ const { step } = require('./motion');
 const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
 const { workMinutesForDay, tasksForDay } = require('./history');
-const { envelope, fitToDisplays } = require('./desktop');
+const { envelope, fitToDisplays, homeSlot } = require('./desktop');
 const { visibleBounds, cutoutBackground } = require('./image-bounds');
 
 let petWindow;
 let panelWindow;
 let topWindow;
+let updateWindow;
 let panelMode;
 let data;
+let homeLayout;
 let position;
 let ownDragStart;
 let workAreas = [];
@@ -41,6 +43,8 @@ let remoteTimer;
 let remoteSyncQueue = Promise.resolve();
 let poseSyncQueue = Promise.resolve();
 let reaction = null;
+let pendingRelease;
+let ignoredRelease;
 const seenReactions = new Map();
 const remoteWindows = new Map();
 const meeting = new Set();
@@ -58,7 +62,12 @@ function dataPath() { return path.join(app.getPath('userData'), 'prototype.json'
 function sessionPath() { return path.join(app.getPath('userData'), 'pet-account-session.bin'); }
 function aiKeyPath() { return path.join(app.getPath('userData'), 'openai-key.bin'); }
 function imagePath() { return path.join(app.getPath('userData'), 'character.png'); }
-function displayImagePath() { return fs.existsSync(imagePath()) ? imagePath() : path.join(__dirname, 'default-character.png'); }
+function displayImagePath() {
+  const id = data?.currentCharacterId;
+  if (id && /^[a-f0-9]{64}$/.test(id) && fs.existsSync(wardrobePath(id))) return wardrobePath(id);
+  return fs.existsSync(imagePath()) ? imagePath() : path.join(__dirname, 'default-character.png');
+}
+function wardrobePath(id) { return path.join(app.getPath('userData'), 'wardrobe', `${id}.png`); }
 function posePath(name) { return path.join(app.getPath('userData'), 'poses', name); }
 function imageUrl(file) { return `${pathToFileURL(file).href}?v=${fs.statSync(file).mtimeMs}`; }
 function visibleImagePath(file) {
@@ -90,7 +99,36 @@ function loadData() {
   return { size: 130, bubbleOpacity: 100, tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
     lunchStart: '12:00', lunchEnd: '13:00', sessions: [], followMouse: false,
     alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFiles: [], poseSets: [],
+    wardrobe: [], characterHistory: [], currentCharacterId: 'default',
     ...saved, fixedTasks: [], tasks };
+}
+function rememberCharacter(bytes, label) {
+  const id = createHash('sha256').update(bytes).digest('hex');
+  fs.mkdirSync(path.dirname(wardrobePath(id)), { recursive: true });
+  if (!fs.existsSync(wardrobePath(id))) fs.writeFileSync(wardrobePath(id), bytes);
+  if (!data.wardrobe.some(item => item.id === id)) {
+    data.wardrobe.unshift({ id, label: String(label || '캐릭터').slice(0, 60), addedAt: Date.now() });
+  }
+  return id;
+}
+function wardrobeData() {
+  const defaultFile = path.join(__dirname, 'default-character.png');
+  return [{ id: 'default', label: '기본 캐릭터', url: imageUrl(visibleImagePath(defaultFile)), active: data.currentCharacterId === 'default' },
+    ...data.wardrobe.filter(item => /^[a-f0-9]{64}$/.test(item.id) && fs.existsSync(wardrobePath(item.id))).map(item => ({ ...item,
+      url: imageUrl(visibleImagePath(wardrobePath(item.id))), active: data.currentCharacterId === item.id }))];
+}
+function selectCharacter(id) {
+  if (id !== 'default' && (!/^[a-f0-9]{64}$/.test(id) || !data.wardrobe.some(item => item.id === id && fs.existsSync(wardrobePath(id)))))
+    throw new Error('옷장에 없는 캐릭터예요.');
+  if (id === 'default') fs.rmSync(imagePath(), { force: true });
+  else fs.copyFileSync(wardrobePath(id), imagePath());
+  if (data.currentCharacterId !== id) {
+    data.currentCharacterId = id;
+    data.characterHistory.push({ id, at: Date.now() });
+  }
+  saveData();
+  void syncRemote();
+  return publicData();
 }
 function saveData() {
   fs.writeFileSync(dataPath(), JSON.stringify(data, null, 2));
@@ -98,6 +136,7 @@ function saveData() {
 }
 function publicData() {
   return { ...data, image: imageUrl(visibleImagePath(displayImagePath())),
+    wardrobe: wardrobeData(),
     hasAiKey: fs.existsSync(aiKeyPath()),
     workStatus: workState(new Date(), data),
     remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError,
@@ -372,6 +411,20 @@ async function offerStartupUpdate() {
     await installUpdate(release);
   } catch { /* 인터넷이 없어도 기존 앱은 그대로 사용합니다. */ }
 }
+async function checkForRunningUpdate() {
+  if (path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe' || installingUpdate) return;
+  try {
+    const release = await latestRelease();
+    if (!release.update || !release.asset || ignoredRelease === release.latest) return;
+    pendingRelease = release;
+    if (updateWindow && !updateWindow.isDestroyed()) return;
+    const area = screen.getPrimaryDisplay().workArea;
+    updateWindow = makeWindow('update.html', { width: 240, height: 78,
+      x: area.x + area.width - 246, y: area.y + 40, frame: false, transparent: true,
+      alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false }, { version: release.latest });
+    updateWindow.on('closed', () => { updateWindow = null; });
+  } catch { /* 다음 확인 때 재시도합니다. */ }
+}
 async function sendRemote() {
   if (!remoteSession) return;
   try {
@@ -399,11 +452,55 @@ function makeWindow(file, options, query) {
     ...options
   });
   win.loadFile(path.join(__dirname, file), query ? { query } : undefined);
-  win.webContents.once('did-finish-load', () => win.show());
+  win.webContents.once('did-finish-load', () => { if (file === 'update.html') win.showInactive(); else win.show(); keepOnTop(win); });
   return win;
 }
+function keepOnTop(win) {
+  if (!win || win.isDestroyed() || !win.isVisible() || (win !== topWindow && win !== updateWindow && !data.alwaysOnTop)) return;
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.moveTop();
+}
+function refreshAllOnTop() {
+  for (const win of [...[...remoteWindows.values()].map(item => item.window), petWindow, panelWindow, updateWindow, topWindow]) keepOnTop(win);
+}
+function arrangeHome() {
+  if (homeLayout) {
+    const saved = homeLayout;
+    homeLayout = null;
+    ownPinned = saved.ownPinned;
+    if (petWindow && !petWindow.isDestroyed()) {
+      const place = fitToDisplays(saved.own.x, saved.own.y, workAreas, ownVisual());
+      placeWindow(petWindow, place.x, place.y);
+      position = place;
+    }
+    for (const [win, state] of saved.friends) {
+      if (win.isDestroyed()) continue;
+      const item = [...remoteWindows.values()].find(value => value.window === win);
+      if (!item) continue;
+      item.pinned = state.pinned;
+      const place = fitToDisplays(state.x, state.y, workAreas, friendVisual());
+      if (placeWindow(win, place.x, place.y)) { item.x = place.x; item.y = place.y; }
+    }
+    return;
+  }
+  const friends = [...remoteWindows.values()].filter(item => !item.window.isDestroyed());
+  homeLayout = { own: petWindow.getBounds(), ownPinned,
+    friends: new Map(friends.map(item => [item.window, { ...item.window.getBounds(), pinned: item.pinned }])) };
+  ownPinned = true;
+  for (const item of friends) item.pinned = true;
+  const area = screen.getPrimaryDisplay().workArea;
+  [petWindow, ...friends.map(item => item.window)].forEach((win, index) => {
+    const visual = win === petWindow ? ownVisual() : friendVisual();
+    const figure = homeSlot(area, data.size, index);
+    const place = fitToDisplays(figure.x - visual.left, figure.y - visual.top, workAreas, visual);
+    if (placeWindow(win, place.x, place.y)) {
+      if (win === petWindow) position = place;
+      else { const item = friends.find(value => value.window === win); item.x = place.x; item.y = place.y; }
+    }
+  });
+}
 function togglePanel(mode = 'tasks') {
-  const file = mode === 'history' ? 'history.html' : 'panel.html';
+  const file = mode === 'history' ? 'history.html' : mode === 'wardrobe' ? 'wardrobe.html' : 'panel.html';
   if (panelWindow && !panelWindow.isDestroyed()) {
     if (panelMode === mode) panelWindow.close();
     else {
@@ -426,8 +523,8 @@ function togglePanel(mode = 'tasks') {
 function panelBounds(mode) {
   const { x, y } = petWindow.getBounds();
   const area = screen.getDisplayNearestPoint({ x: x + 120, y: y + 217 - data.size / 2 }).workArea;
-  const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'settings' ? 280 : 240;
-  const height = Math.min(mode === 'tasks' ? 300 : mode === 'history' ? 650 : mode === 'settings' ? 590 : 66, area.height - 16);
+  const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'wardrobe' ? Math.min(420, area.width - 16) : mode === 'settings' ? 280 : 240;
+  const height = Math.min(mode === 'tasks' ? 300 : mode === 'history' ? 650 : mode === 'wardrobe' ? 520 : mode === 'settings' ? 590 : 66, area.height - 16);
   const figureTop = y + 217 - data.size;
   const placement = figureTop - height >= area.y ? 'above' : 'below';
   return { width, height, placement,
@@ -449,6 +546,10 @@ app.whenReady().then(() => {
   refreshWorkAreas();
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, refreshWorkAreas);
   data = loadData();
+  if (fs.existsSync(imagePath()) && data.currentCharacterId === 'default') {
+    data.currentCharacterId = rememberCharacter(fs.readFileSync(imagePath()), '기존 캐릭터');
+    data.characterHistory.push({ id: data.currentCharacterId, at: Date.now() });
+  }
   ownPinned = !!data.ownPinned;
   loadRemoteSession();
   data.sessions = (data.sessions || []).map(session => session.endedAt ? session : { ...session, endedAt: session.lastSeenAt });
@@ -461,7 +562,10 @@ app.whenReady().then(() => {
   const area = screen.getPrimaryDisplay().workArea;
   position = { x: area.x + area.width - 290, y: area.y + area.height - 310 };
   petWindow = makeWindow('pet.html', { width: 240, height: 250, x: position.x, y: position.y,
-    frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false, hasShadow: false });
+    frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: false, resizable: false,
+    hasShadow: false, icon: path.join(__dirname, 'default-character.png') });
+  petWindow.on('focus', refreshAllOnTop);
+  petWindow.on('restore', refreshAllOnTop);
   petWindow.webContents.on('context-menu', () => {
     Menu.buildFromTemplate([
       { label: ownPinned ? '자동 이동 다시 켜기' : '여기에 고정', click: () => { ownPinned = !ownPinned; data.ownPinned = ownPinned; saveData(); } },
@@ -469,12 +573,14 @@ app.whenReady().then(() => {
       { label: '종료', click: () => app.quit() }
     ]).popup({ window: petWindow });
   });
-  topWindow = makeWindow('top.html', { width: 28, height: 28, x: area.x + area.width - 34, y: area.y + 6,
+  topWindow = makeWindow('top.html', { width: 60, height: 28, x: area.x + area.width - 66, y: area.y + 6,
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false });
+  setInterval(refreshAllOnTop, 3000);
   movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 30);
   remoteTimer = setInterval(syncRemote, 10000);
   if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); void queuePosePublish().catch(() => {}); }
   void offerStartupUpdate();
+  setInterval(checkForRunningUpdate, 10 * 60 * 1000);
 });
 
 ipcMain.handle('load', () => publicData());
@@ -482,11 +588,16 @@ ipcMain.handle('history-month', (_event, year, month) => {
   year = Number(year); month = Number(month);
   if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isInteger(month) || month < 1 || month > 12) return null;
   if (activeSession) activeSession.lastSeenAt = Date.now();
+  const charactersById = new Map(wardrobeData().map(item => [item.id, item]));
   const count = new Date(year, month, 0).getDate();
   const days = Array.from({ length: count }, (_, index) => {
     const date = new Date(year, month - 1, index + 1);
     const key = `${year}-${String(month).padStart(2, '0')}-${String(index + 1).padStart(2, '0')}`;
-    return { day: index + 1, key, minutes: workMinutesForDay(date, data.sessions, data),
+    const characters = data.characterHistory.filter(item => {
+      const changed = new Date(item.at);
+      return changed.getFullYear() === year && changed.getMonth() + 1 === month && changed.getDate() === index + 1;
+    }).map(item => charactersById.get(item.id)).filter(Boolean);
+    return { day: index + 1, key, minutes: workMinutesForDay(date, data.sessions, data), characters,
       tasks: tasksForDay(key, data.tasks, data.taskHistory || [], today()) };
   });
   return { year, month, days, total: days.reduce((sum, day) => sum + day.minutes, 0) };
@@ -512,9 +623,25 @@ ipcMain.handle('choose-image', async () => {
   const { width, height } = image.getSize();
   if (width * height > 16_000_000) throw new Error('이미지가 너무 커요.');
   const bitmap = image.toBitmap();
-  fs.writeFileSync(imagePath(), cutoutBackground(bitmap, width, height)
-    ? nativeImage.createFromBitmap(bitmap, { width, height }).toPNG() : original);
-  broadcast();
+  const bytes = cutoutBackground(bitmap, width, height)
+    ? nativeImage.createFromBitmap(bitmap, { width, height }).toPNG() : original;
+  return selectCharacter(rememberCharacter(bytes, path.basename(file, '.png')));
+});
+ipcMain.handle('activate-character', (_event, id) => selectCharacter(String(id)));
+ipcMain.handle('delete-character', (_event, id) => {
+  if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) throw new Error('옷장에 없는 캐릭터예요.');
+  const index = data.wardrobe.findIndex(item => item.id === id);
+  if (index < 0) throw new Error('옷장에 없는 캐릭터예요.');
+  if (data.currentCharacterId === id) {
+    fs.rmSync(imagePath(), { force: true });
+    data.currentCharacterId = 'default';
+    data.characterHistory.push({ id: 'default', at: Date.now() });
+  }
+  data.wardrobe.splice(index, 1);
+  data.characterHistory = data.characterHistory.filter(item => item.id !== id);
+  fs.rmSync(wardrobePath(id), { force: true });
+  saveData();
+  void syncRemote();
   return publicData();
 });
 ipcMain.handle('save-ai-key', (_event, key) => {
@@ -651,9 +778,9 @@ ipcMain.handle('set-settings', async (_event, settings) => {
   data.alwaysOnTop = !!settings.alwaysOnTop;
   data.autoLaunch = !!settings.autoLaunch;
   data.completedTodos = settings.completedTodos === 'hide' ? 'hide' : 'bottom';
-  petWindow.setAlwaysOnTop(data.alwaysOnTop);
-  if (panelWindow && !panelWindow.isDestroyed()) panelWindow.setAlwaysOnTop(data.alwaysOnTop);
-  for (const item of remoteWindows.values()) item.window.setAlwaysOnTop(data.alwaysOnTop);
+  for (const win of [petWindow, panelWindow, ...[...remoteWindows.values()].map(item => item.window)])
+    if (win && !win.isDestroyed()) win.setAlwaysOnTop(data.alwaysOnTop, 'screen-saver');
+  if (data.alwaysOnTop) refreshAllOnTop();
   const loginOptions = app.isPackaged ? { openAtLogin: data.autoLaunch } :
     { openAtLogin: data.autoLaunch, path: process.execPath, args: [app.getAppPath()] };
   app.setLoginItemSettings(loginOptions);
@@ -676,17 +803,20 @@ ipcMain.handle('set-speech', (_event, text, temporary = false) => {
 });
 ipcMain.on('toggle-panel', () => togglePanel('tasks'));
 ipcMain.on('open-history', () => togglePanel('history'));
+ipcMain.on('open-wardrobe', () => togglePanel('wardrobe'));
 ipcMain.on('toggle-chat', () => togglePanel('chat'));
 ipcMain.on('refresh-top', () => {
   data.alwaysOnTop = true;
   for (const window of [petWindow, panelWindow, ...[...remoteWindows.values()].map(item => item.window), topWindow]) {
     if (!window || window.isDestroyed()) continue;
     window.setAlwaysOnTop(false);
-    window.setAlwaysOnTop(true, 'screen-saver');
-    window.moveTop();
   }
+  refreshAllOnTop();
   saveData();
 });
+ipcMain.on('arrange-home', arrangeHome);
+ipcMain.on('dismiss-update', () => { ignoredRelease = pendingRelease?.latest; updateWindow?.close(); });
+ipcMain.handle('apply-available-update', async () => { if (pendingRelease) await installUpdate(pendingRelease); });
 ipcMain.on('glow-pet', () => {
   reaction = { type: 'glow', id: randomUUID(), createdAt: Date.now() };
   petWindow?.webContents.send('pet-reaction', 'glow');

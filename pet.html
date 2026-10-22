@@ -27,7 +27,7 @@
     border: 0; border-radius: 12px; background: #fffaf5; opacity: var(--chat-opacity, .7); color: #4f3b31;
     font: bold 12px sans-serif; line-height: 14px; cursor: pointer; }
   #glowButton { position:absolute;bottom:calc(var(--size,130px) - 8px);left:calc(50% + var(--size,130px) / 2 + 10px);width:9px;height:9px;padding:0;border:0;border-radius:50%;background:#e9cc9c;opacity:var(--chat-opacity,.7);cursor:pointer }
-  #pet.glowing #figure,#pet.glowing #fallback{filter:drop-shadow(0 0 10px #ffd45d) drop-shadow(0 0 19px #ffc238)}
+  #pet.glowing #figure,#pet.glowing #fallback{filter:brightness(1.35) drop-shadow(0 0 8px #fff9cb) drop-shadow(0 0 17px #ffe156) drop-shadow(0 0 28px #ffae24)}
   #pet.shaking #figure,#pet.shaking #fallback{animation:shake .24s linear 1}
   #pet.highfive:after{content:'🙌';position:absolute;bottom:calc(var(--size,130px) + 55px);left:50%;transform:translateX(-50%);font-size:26px;pointer-events:none;animation:highfive 1.2s ease-out forwards}
   @keyframes highfive{to{opacity:0;transform:translate(-50%,-28px)}}
