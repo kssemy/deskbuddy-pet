@@ -222,6 +222,7 @@ function moveRemotePets() {
     [item.y, item.vy] = step(item.y, item.vy, b.minY, b.maxY);
     const fitted = fitToDisplays(item.x, item.y, workAreas, visual);
     if (!placeWindow(item.window, fitted.x, fitted.y)) { item.x = item.window.getBounds().x; item.y = item.window.getBounds().y; item.vx = 0; item.vy = 0; }
+    else updateRemoteTodoPlacement(item);
   }
 }
 function checkMeetings() {
@@ -332,8 +333,8 @@ function showRemotePets(rows) {
     let item = remoteWindows.get(row.member_id);
     if (!item) {
       const x = area.x + Math.round(Math.random() * Math.max(0, area.width - 190));
-      const y = area.y + Math.round(Math.random() * Math.max(0, area.height - 400));
-      const window = makeWindow('other.html', { width: 190, height: 400, x, y, frame: false,
+      const y = area.y + Math.round(Math.random() * Math.max(0, area.height - 550));
+      const window = makeWindow('other.html', { width: 190, height: 550, x, y, frame: false,
         transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false, hasShadow: false });
       item = { window, x, y, vx: 0.55, vy: 0.3, hovered: false, dragging: false, pinned: false, todoBounds: null };
       remoteWindows.set(row.member_id, item);
@@ -824,8 +825,19 @@ function remoteItemFor(sender) {
 }
 ipcMain.on('remote-todo-bounds', (event, bounds) => {
   const item = remoteItemFor(event.sender);
-  if (item) item.todoBounds = bounds;
+  if (item) { item.todoBounds = bounds; updateRemoteTodoPlacement(item); }
 });
+function updateRemoteTodoPlacement(item) {
+  if (!item.todoBounds) return;
+  const bounds = item.window.getBounds();
+  const figure = friendVisual();
+  const area = screen.getDisplayNearestPoint({ x: bounds.x + 95, y: bounds.y + figure.top + data.size / 2 }).workArea;
+  const placement = bounds.y + item.todoBounds.aboveTop < area.y + 8 ? 'below' : 'above';
+  if (placement !== item.todoPlacement) {
+    item.todoPlacement = placement;
+    item.window.webContents.send('remote-todo-placement', placement);
+  }
+}
 ipcMain.on('remote-drag-state', (event, value) => {
   const item = remoteItemFor(event.sender);
   if (!item) return;
@@ -841,7 +853,7 @@ ipcMain.on('remote-drag', (event, dx, dy) => {
   const x = Math.max(b.minX, Math.min(b.maxX, item.dragStart.x + dx));
   const y = Math.max(b.minY, Math.min(b.maxY, item.dragStart.y + dy));
   const fitted = fitToDisplays(x, y, workAreas, visual);
-  if (placeWindow(item.window, fitted.x, fitted.y)) { item.x = fitted.x; item.y = fitted.y; }
+  if (placeWindow(item.window, fitted.x, fitted.y)) { item.x = fitted.x; item.y = fitted.y; updateRemoteTodoPlacement(item); }
 });
 ipcMain.on('drag-pet-start', event => { if (event.sender === petWindow?.webContents) ownDragStart = petWindow.getBounds(); });
 ipcMain.on('drag-pet-end', event => { if (event.sender === petWindow?.webContents) ownDragStart = null; });

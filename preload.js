@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('pet', {
   onRemote: callback => ipcRenderer.on('remote-update', (_event, data) => callback(data)),
   onRemotePoses: callback => ipcRenderer.on('remote-poses', (_event, poses) => callback(poses)),
   onRemoteSize: callback => ipcRenderer.on('remote-size', (_event, size) => callback(size)),
+  onRemoteTodoPlacement: callback => ipcRenderer.on('remote-todo-placement', (_event, placement) => callback(placement)),
   setSize: value => ipcRenderer.invoke('set-size', value),
   setOpacity: value => ipcRenderer.invoke('set-opacity', value),
   setTasks: tasks => ipcRenderer.invoke('set-tasks', tasks),

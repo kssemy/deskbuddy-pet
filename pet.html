@@ -8,7 +8,7 @@
   html, body { margin: 0; width: 240px; height: 250px; overflow: hidden; background: transparent; }
   body { display: grid; place-items: center; user-select: none; }
   #pet { position: relative; width: 230px; height: 240px; display: grid; place-items: end center; cursor: default; touch-action: none; }
-  #figure { width: var(--size, 130px); height: var(--size, 130px); margin-bottom: 28px; object-fit: contain;
+  #figure { width: auto; max-width: 230px; height: var(--size, 130px); margin-bottom: 28px; object-fit: contain;
     cursor: grab; animation: float 2s ease-in-out infinite; }
   #fallback { font-size: var(--size, 130px); line-height: 1; margin-bottom: 28px; cursor: grab;
     animation: float 2s ease-in-out infinite; }
