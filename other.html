@@ -17,11 +17,11 @@
 #fallback{animation:float 2s ease-in-out infinite}
 #status{max-width:185px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #todo{position:absolute;left:8px;right:8px;bottom:calc(var(--size,130px) + 186px + var(--speech-height,0px));max-height:150px;padding:10px;border-radius:14px;background:#fffaf5;overflow:auto}
-#other.todo-below #todo{bottom:5px}
+#other.todo-below #todo{bottom:auto;top:400px}
 #todo h2{font-size:13px;margin:0 0 8px}#todo ul{padding-left:18px;margin:0}#todo li{margin:5px 0;overflow-wrap:anywhere}
 [hidden]{display:none!important}@keyframes float{50%{transform:translateY(-4px) rotate(1deg)}}
 </style>
-<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" draggable="false" hidden><img id="fallback" src="default-character.png" alt="친구 캐릭터" draggable="false"><div id="status"></div><div id="todo" hidden><h2>공개 TO DO</h2><ul></ul></div></div>
+<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" draggable="false" hidden><img id="fallback" src="default-character.png" alt="친구 캐릭터" draggable="false"><div id="status"></div><div id="todo" hidden><h2>TO DO</h2><ul></ul></div></div>
 <script>
 let baseAvatar='',friendPoses=[],friendPoseIndex=0,friendPoseActive=false,remoteExpiresAt=0,friendPoseIntervalSeconds=8,friendPoseTimer;
 window.pet.onRemote(data=>{
