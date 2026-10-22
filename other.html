@@ -23,12 +23,14 @@
 </style>
 <div id="other"><div id="speech" hidden></div><img id="avatar" alt="" draggable="false" hidden><img id="fallback" src="default-character.png" alt="친구 캐릭터" draggable="false"><div id="status"></div><div id="todo" hidden><h2>공개 TO DO</h2><ul></ul></div></div>
 <script>
-let baseAvatar='',friendPoses=[],friendPoseIndex=0,friendPoseActive=false,remoteExpiresAt=0;
+let baseAvatar='',friendPoses=[],friendPoseIndex=0,friendPoseActive=false,remoteExpiresAt=0,friendPoseIntervalSeconds=8,friendPoseTimer;
 window.pet.onRemote(data=>{
  document.documentElement.style.setProperty('--size',`${data.displaySize||130}px`);
  const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&data.avatar.startsWith('data:image/png;base64,');
  avatar.hidden=!valid;document.querySelector('#fallback').hidden=valid;
- if(valid&&baseAvatar!==data.avatar){baseAvatar=data.avatar;if(!friendPoseActive)avatar.src=baseAvatar}
+ if(valid&&baseAvatar!==data.avatar){baseAvatar=data.avatar;friendPoseIndex=0;if(!friendPoseActive)avatar.src=baseAvatar}
+ const seconds=Math.max(2,Math.min(12,Number(data.public_tasks?.find(task=>task.type==='poses')?.intervalSeconds)||8));
+ if(seconds!==friendPoseIntervalSeconds){friendPoseIntervalSeconds=seconds;clearInterval(friendPoseTimer);friendPoseTimer=setInterval(showFriendPose,seconds*1000)}
  document.querySelector('#status').textContent=data.status||'';
  const speech=document.querySelector('#speech'),expiresAt=data.public_tasks?.find(task=>task.type==='speech-expiry')?.expiresAt||0;
  if(remoteExpiresAt!==expiresAt)speech.classList.remove('popping');remoteExpiresAt=expiresAt;
@@ -41,7 +43,8 @@ window.pet.onRemote(data=>{
 });
 setInterval(()=>{if(remoteExpiresAt&&Date.now()>=remoteExpiresAt)document.querySelector('#speech').classList.add('popping')},200);
 window.pet.onRemotePoses(poses=>{friendPoses=Array.isArray(poses)?poses.filter(image=>typeof image==='string'&&image.startsWith('data:image/png;base64,')):[];friendPoseIndex=0});
-setInterval(()=>{if(!baseAvatar||!friendPoses.length)return;const avatar=document.querySelector('#avatar');friendPoseActive=true;avatar.src=friendPoses[friendPoseIndex++%friendPoses.length];setTimeout(()=>{friendPoseActive=false;avatar.src=baseAvatar},1800)},8000);
+function showFriendPose(){if(!baseAvatar||!friendPoses.length)return;const avatar=document.querySelector('#avatar');friendPoseActive=true;avatar.src=friendPoses[friendPoseIndex++%friendPoses.length];setTimeout(()=>{friendPoseActive=false;avatar.src=baseAvatar},1800)}
+friendPoseTimer=setInterval(showFriendPose,8000);
 window.pet.onRemoteSize(size=>{document.documentElement.style.setProperty('--size',`${size}px`);reportTodoBounds()});
 const other=document.querySelector('#other');
 let last=null,moved=false;

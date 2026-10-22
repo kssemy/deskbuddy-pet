@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('pet', {
   chooseImage: () => ipcRenderer.invoke('choose-image'),
   addPoses: id => ipcRenderer.invoke('add-poses', id),
   removePose: (id, name) => ipcRenderer.invoke('remove-pose', id, name),
+  setPoseSpeed: (id, direction) => ipcRenderer.invoke('set-pose-speed', id, direction),
   resizePanel: height => ipcRenderer.send('resize-panel', height),
   connectPet: (name, pin, register) => ipcRenderer.invoke('connect-pet', name, pin, register),
   disconnectPet: () => ipcRenderer.invoke('disconnect-pet'),

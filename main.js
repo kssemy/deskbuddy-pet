@@ -99,7 +99,7 @@ function loadData() {
     .map(task => ({ ...task, completedAt: task.done ? (task.completedAt || task.day) : '' }));
   return { size: 130, bubbleOpacity: 100, tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
     lunchStart: '12:00', lunchEnd: '13:00', sessions: [], followMouse: false,
-    alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFilesByCharacter: {},
+    alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFilesByCharacter: {}, poseIntervalSecondsByCharacter: {},
     wardrobe: [], characterHistory: [], currentCharacterId: 'default',
     ...saved, fixedTasks: [], tasks,
     poseFilesByCharacter: saved.poseFilesByCharacter || { [saved.currentCharacterId || 'default']: saved.poseFiles || [] },
@@ -116,10 +116,11 @@ function rememberCharacter(bytes, label) {
 }
 function wardrobeData() {
   const defaultFile = path.join(__dirname, 'default-character.png');
-  return [{ id: 'default', label: '기본 캐릭터', url: imageUrl(visibleImagePath(defaultFile)), active: data.currentCharacterId === 'default', poses: posesFor('default') },
+  return [{ id: 'default', label: '기본 캐릭터', url: imageUrl(visibleImagePath(defaultFile)), active: data.currentCharacterId === 'default', poses: posesFor('default'), poseIntervalSeconds: poseIntervalSecondsFor('default') },
     ...data.wardrobe.filter(item => /^[a-f0-9]{64}$/.test(item.id) && fs.existsSync(wardrobePath(item.id))).map(item => ({ ...item,
-      url: imageUrl(visibleImagePath(wardrobePath(item.id))), active: data.currentCharacterId === item.id, poses: posesFor(item.id) }))];
+      url: imageUrl(visibleImagePath(wardrobePath(item.id))), active: data.currentCharacterId === item.id, poses: posesFor(item.id), poseIntervalSeconds: poseIntervalSecondsFor(item.id) }))];
 }
+function poseIntervalSecondsFor(id) { return data.poseIntervalSecondsByCharacter?.[id] || 8; }
 function posesFor(id) {
   return (data.poseFilesByCharacter?.[id] || []).filter(name => /^pose-[\w-]+\.png$/.test(name) && fs.existsSync(posePath(name)))
     .map(name => ({ name, url: imageUrl(visibleImagePath(posePath(name))) }));
@@ -149,7 +150,8 @@ function publicData() {
     workStatus: workState(new Date(), data),
     remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError,
       checked: remoteChecked, friendCount: remoteWindows.size },
-    poses: wardrobe.find(item => item.id === data.currentCharacterId)?.poses || [] };
+    poses: wardrobe.find(item => item.id === data.currentCharacterId)?.poses || [],
+    poseIntervalSeconds: poseIntervalSecondsFor(data.currentCharacterId) };
 }
 function broadcast() {
   for (const win of [petWindow, panelWindow]) {
@@ -444,7 +446,7 @@ async function sendRemote() {
       body: JSON.stringify({ member_id: remoteSession.id, name: remoteSession.name, avatar: avatarData(), speech: data.speech || '',
         status: state,
         public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
-          .map(task => ({ text: task.text, done: task.done })), { type: 'poses', revision: data.poseRevision || '' },
+          .map(task => ({ text: task.text, done: task.done })), { type: 'poses', revision: data.poseRevision || '', intervalSeconds: poseIntervalSecondsFor(data.currentCharacterId) },
           ...(data.speechExpiresAt ? [{ type: 'speech-expiry', expiresAt: data.speechExpiresAt }] : []),
           ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
     const rows = await remoteApi('/pet_presence?select=*');
@@ -661,6 +663,7 @@ ipcMain.handle('delete-character', (_event, id) => {
   data.characterHistory = data.characterHistory.filter(item => item.id !== id);
   for (const name of data.poseFilesByCharacter[id] || []) fs.rmSync(posePath(name), { force: true });
   delete data.poseFilesByCharacter[id];
+  delete data.poseIntervalSecondsByCharacter[id];
   fs.rmSync(wardrobePath(id), { force: true });
   saveData();
   if (wasActive && remoteSession) void queuePosePublish().catch(() => {});
@@ -690,6 +693,14 @@ ipcMain.handle('remove-pose', async (_event, id, name) => {
   fs.rmSync(posePath(name), { force: true });
   saveData();
   if (remoteSession && id === data.currentCharacterId) await queuePosePublish();
+  return publicData();
+});
+ipcMain.handle('set-pose-speed', (_event, id, direction) => {
+  if (!wardrobeData().some(item => item.id === id) || ![-1, 1].includes(direction)) throw new Error('동작 속도를 바꿀 수 없어요.');
+  const seconds = Math.max(2, Math.min(12, poseIntervalSecondsFor(id) - direction));
+  data.poseIntervalSecondsByCharacter[id] = seconds;
+  saveData();
+  if (remoteSession && id === data.currentCharacterId) void syncRemote();
   return publicData();
 });
 ipcMain.handle('set-size', (_event, value) => {

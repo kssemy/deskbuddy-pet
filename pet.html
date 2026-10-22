@@ -54,7 +54,7 @@
   const countdown = document.querySelector('#countdown');
   const chatButton = document.querySelector('#chatButton');
   const status = document.querySelector('#workStatus');
-  let baseImage = null, poses = [], poseIndex = 0;
+  let baseImage = null, poses = [], poseIndex = 0, poseIntervalSeconds = 0, poseTimer, poseRestoreTimer, poseActive = false;
   let expiresAt = 0;
   function updateCountdown() {
     const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
@@ -66,11 +66,23 @@
     document.documentElement.style.setProperty('--size', `${data.size}px`);
     document.documentElement.style.setProperty('--bubble-opacity', Number(data.bubbleOpacity ?? 100) / 100);
     document.documentElement.style.setProperty('--chat-opacity', Number(data.bubbleOpacity ?? 100) / 100 * .7);
+    const nextPoses = (data.poses || []).map(pose => pose.url);
+    if (baseImage !== data.image || poses.join('|') !== nextPoses.join('|')) {
+      poseIndex = 0;
+      clearTimeout(poseRestoreTimer);
+      poseActive = false;
+    }
     baseImage = data.image;
-    poses = (data.poses || []).map(pose => pose.url);
+    poses = nextPoses;
+    const seconds = Math.max(2, Math.min(12, Number(data.poseIntervalSeconds) || 8));
+    if (seconds !== poseIntervalSeconds) {
+      poseIntervalSeconds = seconds;
+      clearInterval(poseTimer);
+      poseTimer = setInterval(showNextPose, seconds * 1000);
+    }
     image.hidden = !baseImage;
     fallback.hidden = !!baseImage;
-    if (baseImage && image.src !== baseImage) image.src = baseImage;
+    if (baseImage && !poseActive && image.src !== baseImage) image.src = baseImage;
     speechText.textContent = data.speech || '';
     speech.hidden = !data.speech;
     if (expiresAt !== (data.speechExpiresAt || 0)) speech.classList.remove('popping');
@@ -80,11 +92,13 @@
     status.textContent = data.workStatus || '';
   }
   setInterval(updateCountdown, 200);
-  setInterval(() => {
+  function showNextPose() {
     if (!baseImage || !poses.length) return;
+    poseActive = true;
     image.src = poses[poseIndex++ % poses.length];
-    setTimeout(() => { if (baseImage) image.src = baseImage; }, 1800);
-  }, 8000);
+    clearTimeout(poseRestoreTimer);
+    poseRestoreTimer = setTimeout(() => { poseActive = false; if (baseImage) image.src = baseImage; }, 1800);
+  }
   window.pet.load().then(render);
   window.pet.onChange(render);
   document.addEventListener('dragstart', event => event.preventDefault());
