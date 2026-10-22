@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, screen, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, screen, shell, Tray } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -13,6 +13,7 @@ const { envelope, fitToDisplays, homeSlot, resizeAnchoredPanel } = require('./de
 const { visibleBounds, cutoutBackground } = require('./image-bounds');
 
 let petWindow;
+let tray;
 let panelWindow;
 let topWindow;
 let updateWindow;
@@ -98,7 +99,7 @@ function loadData() {
   const tasks = [...(saved.tasks || []).map(task => ({ ...task, day: task.day || today() })),
     ...(saved.fixedTasks || []).map(task => ({ ...task, day: task.day || today(), pinned: true }))]
     .map(task => ({ ...task, completedAt: task.done ? (task.completedAt || task.day) : '' }));
-  return { size: 130, bubbleOpacity: 100, tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
+  return { size: 130, bubbleOpacity: 100, glowColor: '#ffe156', tasks: [], taskHistory: [], memos: [], shareTodos: false, completedTodos: 'bottom', speech: '', workStart: '09:00', workEnd: '18:00',
     lunchStart: '12:00', lunchEnd: '13:00', sessions: [], followMouse: false,
     alwaysOnTop: true, autoLaunch: false, ownPinned: false, poseFilesByCharacter: {}, poseIntervalSecondsByCharacter: {},
     wardrobe: [], characterHistory: [], currentCharacterId: 'default',
@@ -164,7 +165,7 @@ function petBounds() {
 }
 function ownVisual() {
   const left = (240 - data.size) / 2;
-  return { left, right: left + data.size, top: 217 - data.size, bottom: 240 };
+  return { left, right: left + data.size, top: 192 - data.size, bottom: 215 };
 }
 function refreshWorkAreas() { workAreas = screen.getAllDisplays().map(display => display.workArea); }
 function placeWindow(window, x, y) {
@@ -448,6 +449,7 @@ async function sendRemote() {
         status: state,
         public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
           .map(task => ({ text: task.text, done: task.done })), { type: 'poses', revision: data.poseRevision || '', intervalSeconds: poseIntervalSecondsFor(data.currentCharacterId) },
+          { type: 'glow-color', color: data.glowColor },
           ...(data.speechExpiresAt ? [{ type: 'speech-expiry', expiresAt: data.speechExpiresAt }] : []),
           ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
     const rows = await remoteApi('/pet_presence?select=*');
@@ -541,14 +543,14 @@ function togglePanel(mode = 'tasks') {
 }
 function panelBounds(mode) {
   const { x, y } = petWindow.getBounds();
-  const area = screen.getDisplayNearestPoint({ x: x + 120, y: y + 217 - data.size / 2 }).workArea;
+  const area = screen.getDisplayNearestPoint({ x: x + 120, y: y + 192 - data.size / 2 }).workArea;
   const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'wardrobe' ? Math.min(420, area.width - 16) : mode === 'settings' ? 280 : 240;
   const height = Math.min(mode === 'tasks' ? 300 : mode === 'history' ? 650 : mode === 'wardrobe' ? 520 : mode === 'settings' ? 590 : 66, area.height - 16);
-  const figureTop = y + 217 - data.size;
+  const figureTop = y + 192 - data.size;
   const placement = figureTop - height - 8 >= area.y ? 'above' : 'below';
   return { width, height, placement,
     x: Math.round(Math.max(area.x, Math.min(x + 120 - width / 2, area.x + area.width - width))),
-    y: Math.round(Math.max(area.y, Math.min(placement === 'above' ? figureTop - height - 8 : y + 225, area.y + area.height - height))) };
+    y: Math.round(Math.max(area.y, Math.min(placement === 'above' ? figureTop - height - 8 : y + 200, area.y + area.height - height))) };
 }
 function resizeTaskPanel(height) {
   if (!panelWindow || panelWindow.isDestroyed() || panelMode !== 'tasks') return;
@@ -586,8 +588,16 @@ app.whenReady().then(() => {
   const area = screen.getPrimaryDisplay().workArea;
   position = { x: area.x + area.width - 290, y: area.y + area.height - 310 };
   petWindow = makeWindow('pet.html', { width: 240, height: 250, x: position.x, y: position.y,
-    frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: false, resizable: false,
+    frame: false, transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false,
     hasShadow: false, icon: path.join(__dirname, 'default-character.png') });
+  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'default-character.png')).resize({ width: 32, height: 32 }));
+  tray.setToolTip('DeskBuddy');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '캐릭터 맨 위로', click: () => { refreshAllOnTop(true); void checkForRunningUpdate(); } },
+    { label: '설정', click: () => togglePanel('settings') },
+    { label: '종료', click: () => app.quit() }
+  ]));
+  tray.on('click', () => { refreshAllOnTop(true); void checkForRunningUpdate(); });
   petWindow.on('focus', () => { refreshAllOnTop(true); void checkForRunningUpdate(); });
   petWindow.on('restore', () => { refreshAllOnTop(true); void checkForRunningUpdate(); });
   petWindow.webContents.on('context-menu', () => {
@@ -753,6 +763,7 @@ ipcMain.handle('set-settings', async (_event, settings) => {
   data.alwaysOnTop = !!settings.alwaysOnTop;
   data.autoLaunch = !!settings.autoLaunch;
   data.completedTodos = settings.completedTodos === 'hide' ? 'hide' : 'bottom';
+  if (/^#[0-9a-fA-F]{6}$/.test(settings.glowColor)) data.glowColor = settings.glowColor;
   for (const win of [petWindow, panelWindow, ...[...remoteWindows.values()].map(item => item.window)])
     if (win && !win.isDestroyed()) win.setAlwaysOnTop(data.alwaysOnTop, 'screen-saver');
   if (data.alwaysOnTop) refreshAllOnTop();

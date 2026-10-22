@@ -8,12 +8,12 @@
   html, body { margin: 0; width: 240px; height: 250px; overflow: hidden; background: transparent; }
   body { display: grid; place-items: center; user-select: none; }
   #pet { position: relative; width: 230px; height: 240px; display: grid; place-items: end center; cursor: default; touch-action: none; }
-  #figure { width: auto; max-width: 230px; height: var(--size, 130px); margin-bottom: 28px; object-fit: contain;
+  #figure { width: auto; max-width: 230px; height: var(--size, 130px); margin-bottom: 53px; object-fit: contain;
     cursor: grab; animation: float 2s ease-in-out infinite; }
-  #fallback { font-size: var(--size, 130px); line-height: 1; margin-bottom: 28px; cursor: grab;
+  #fallback { font-size: var(--size, 130px); line-height: 1; margin-bottom: 53px; cursor: grab;
     animation: float 2s ease-in-out infinite; }
   #figure:active,#fallback:active { cursor: grabbing; }
-  #speech { position: absolute; bottom: calc(var(--size, 130px) + 39px); left: 50%; transform: translateX(-50%); opacity: var(--bubble-opacity, 1);
+  #speech { position: absolute; bottom: calc(var(--size, 130px) + 64px); left: 50%; transform: translateX(-50%); opacity: var(--bubble-opacity, 1);
     width: max-content; max-width: 170px; max-height: 55px; overflow: hidden;
     padding: 6px 8px; border: 0; border-radius: 12px; background: #fffaf5;
     color: #4f3b31; font: 12px/1.3 sans-serif; overflow-wrap: anywhere; pointer-events: none; }
@@ -23,16 +23,16 @@
   @keyframes pop{40%{transform:translateX(-50%) scale(1.15)}100%{transform:translateX(-50%) scale(.5);opacity:0}}
   @keyframes burst{0%{transform:translate(-50%,-50%) scale(.3);opacity:0}40%{opacity:1}100%{transform:translate(-50%,-50%) scale(1.7);opacity:0}}
   #countdown { margin-left: 5px; font-weight: 700; color: #b4513d; }
-  #chatButton { position: absolute; bottom: calc(var(--size, 130px) + 4px); left: calc(50% + var(--size, 130px) / 2 + 2px); width: 24px; height: 22px;
+  #chatButton { position: absolute; bottom: calc(var(--size, 130px) + 29px); left: calc(50% + var(--size, 130px) / 2 + 2px); width: 24px; height: 22px;
     border: 0; border-radius: 12px; background: #fffaf5; opacity: var(--chat-opacity, .7); color: #4f3b31;
     font: bold 12px sans-serif; line-height: 14px; cursor: pointer; }
-  #glowButton { position:absolute;bottom:calc(var(--size,130px) - 8px);left:calc(50% + var(--size,130px) / 2 + 10px);width:9px;height:9px;padding:0;border:0;border-radius:50%;background:#e9cc9c;opacity:var(--chat-opacity,.7);cursor:pointer }
-  #pet.glowing #figure,#pet.glowing #fallback{filter:brightness(1.35) drop-shadow(0 0 8px #fff9cb) drop-shadow(0 0 17px #ffe156) drop-shadow(0 0 28px #ffae24)}
+  #glowButton { position:absolute;bottom:calc(var(--size,130px) + 17px);left:calc(50% + var(--size,130px) / 2 + 10px);width:9px;height:9px;padding:0;border:0;border-radius:50%;background:#e9cc9c;opacity:var(--chat-opacity,.7);cursor:pointer }
+  #pet.glowing #figure,#pet.glowing #fallback{filter:brightness(1.35) drop-shadow(0 0 8px var(--glow-color,#ffe156)) drop-shadow(0 0 17px var(--glow-color,#ffe156)) drop-shadow(0 0 28px var(--glow-color,#ffe156))}
   #pet.shaking #figure,#pet.shaking #fallback{animation:shake .24s linear 1}
   #pet.highfive:after{content:'🙌';position:absolute;bottom:calc(var(--size,130px) + 55px);left:50%;transform:translateX(-50%);font-size:26px;pointer-events:none;animation:highfive 1.2s ease-out forwards}
   @keyframes highfive{to{opacity:0;transform:translate(-50%,-28px)}}
   @keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
-  #workStatus { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; color: #4f3b31;
+  #workStatus { position: absolute; bottom: 39px; left: 0; right: 0; text-align: center; color: #4f3b31;
     font: 11px/1.3 sans-serif; pointer-events: none; }
   [hidden] { display: none !important; }
   @keyframes float { 50% { transform: translateY(-4px) rotate(1deg); } }
@@ -66,6 +66,7 @@
     document.documentElement.style.setProperty('--size', `${data.size}px`);
     document.documentElement.style.setProperty('--bubble-opacity', Number(data.bubbleOpacity ?? 100) / 100);
     document.documentElement.style.setProperty('--chat-opacity', Number(data.bubbleOpacity ?? 100) / 100 * .7);
+    document.documentElement.style.setProperty('--glow-color', data.glowColor || '#ffe156');
     const nextPoses = (data.poses || []).map(pose => pose.url);
     if (baseImage !== data.image || poses.join('|') !== nextPoses.join('|')) {
       poseIndex = 0;
