@@ -672,6 +672,7 @@ ipcMain.handle('generate-ai-pose', async (_event, action) => {
       n: 3, background: 'transparent', output_format: 'png', size: '1024x1024', quality: 'medium', input_fidelity: 'high' }),
     signal: AbortSignal.timeout(180000) });
   const result = await response.json().catch(() => ({}));
+  if (response.status === 401) throw new Error('OpenAI API 키가 유효하지 않아요. platform.openai.com/api-keys에서 새 키를 만든 뒤 다시 저장해 주세요.');
   if (!response.ok) throw new Error(result.error?.message || `이미지 생성에 실패했어요 (${response.status}).`);
   const images = result.data?.map(item => item.b64_json);
   if (images?.length !== 3 || images.some(image => !image)) throw new Error('동작 3장을 모두 받지 못했어요. 다시 만들어 주세요.');
