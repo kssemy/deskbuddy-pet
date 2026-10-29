@@ -8,7 +8,7 @@
   html, body { margin: 0; width: 240px; height: 250px; overflow: hidden; background: transparent; }
   body { display: grid; place-items: center; user-select: none; }
   #pet { position: relative; width: 230px; height: 240px; display: grid; place-items: end center; cursor: default; touch-action: none; }
-  #figure { width: auto; max-width: 230px; height: var(--size, 130px); margin-bottom: 53px; object-fit: contain;
+  #figure { width: var(--visual-width, var(--size, 130px)); height: var(--visual-height, var(--size, 130px)); margin-bottom: calc(53px + var(--size, 130px) - var(--visual-height, var(--size, 130px))); object-fit: contain;
     cursor: grab; animation: float 2s ease-in-out infinite; }
   #fallback { font-size: var(--size, 130px); line-height: 1; margin-bottom: 53px; cursor: grab;
     animation: float 2s ease-in-out infinite; }
@@ -23,10 +23,10 @@
   @keyframes pop{40%{transform:translateX(-50%) scale(1.15)}100%{transform:translateX(-50%) scale(.5);opacity:0}}
   @keyframes burst{0%{transform:translate(-50%,-50%) scale(.3);opacity:0}40%{opacity:1}100%{transform:translate(-50%,-50%) scale(1.7);opacity:0}}
   #countdown { margin-left: 5px; font-weight: 700; color: #b4513d; }
-  #chatButton { position: absolute; bottom: calc(var(--size, 130px) + 29px); left: calc(50% + var(--size, 130px) / 2 + 2px); width: 24px; height: 22px;
+  #chatButton { position: absolute; bottom: calc(var(--size, 130px) + 29px); left: calc(50% + var(--visual-half-width, 65px) + 2px); width: 24px; height: 22px;
     border: 0; border-radius: 12px; background: #fffaf5; opacity: var(--chat-opacity, .7); color: #4f3b31;
     font: bold 12px sans-serif; line-height: 14px; cursor: pointer; }
-  #glowButton { position:absolute;bottom:calc(var(--size,130px) + 17px);left:calc(50% + var(--size,130px) / 2 + 10px);width:9px;height:9px;padding:0;border:0;border-radius:50%;background:#e9cc9c;opacity:var(--chat-opacity,.7);cursor:pointer }
+  #glowButton { position:absolute;bottom:calc(var(--size,130px) + 53px - var(--glow-offset,36px));left:calc(50% + var(--visual-half-width,65px) + 10px);width:9px;height:9px;padding:0;border:0;border-radius:50%;background:#e9cc9c;opacity:var(--chat-opacity,.7);cursor:pointer }
   #pet.glowing #figure,#pet.glowing #fallback{filter:brightness(1.35) drop-shadow(0 0 8px var(--glow-color,#ffe156)) drop-shadow(0 0 17px var(--glow-color,#ffe156)) drop-shadow(0 0 28px var(--glow-color,#ffe156))}
   #pet.shaking #figure,#pet.shaking #fallback{animation:shake .24s linear 1}
   #pet.highfive:after{content:'🙌';position:absolute;bottom:calc(var(--size,130px) + 55px);left:50%;transform:translateX(-50%);font-size:26px;pointer-events:none;animation:highfive 1.2s ease-out forwards}
@@ -56,6 +56,18 @@
   const status = document.querySelector('#workStatus');
   let baseImage = null, poses = [], poseIndex = 0, poseIntervalSeconds = 0, poseTimer, poseActive = false;
   let expiresAt = 0;
+  function updateImageMetrics() {
+    const size = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size')) || 130;
+    const width = image.hidden ? size : image.naturalWidth || size;
+    const height = image.hidden ? size : image.naturalHeight || size;
+    const scale = size / Math.max(width, height);
+    const visualWidth = width * scale, visualHeight = height * scale;
+    document.documentElement.style.setProperty('--visual-width', `${visualWidth}px`);
+    document.documentElement.style.setProperty('--visual-height', `${visualHeight}px`);
+    document.documentElement.style.setProperty('--visual-half-width', `${visualWidth / 2}px`);
+    document.documentElement.style.setProperty('--glow-offset', `${Math.min(36, visualHeight / 2)}px`);
+  }
+  image.addEventListener('load', updateImageMetrics);
   function updateCountdown() {
     const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
     countdown.hidden = !seconds;
@@ -83,6 +95,7 @@
     image.hidden = !baseImage;
     fallback.hidden = !!baseImage;
     if (baseImage && !poseActive && image.src !== baseImage) image.src = baseImage;
+    updateImageMetrics();
     speechText.textContent = data.speech || '';
     speech.hidden = !data.speech;
     if (expiresAt !== (data.speechExpiresAt || 0)) speech.classList.remove('popping');

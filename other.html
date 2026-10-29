@@ -2,7 +2,8 @@
 <style>
 *{box-sizing:border-box}html,body{margin:0;width:190px;height:550px;overflow:hidden;background:transparent;color:#4f3b31;font:11px/1.3 sans-serif;user-select:none}
 #other{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:155px;cursor:default}
-#avatar,#fallback{width:auto;max-width:190px;height:var(--size,130px);object-fit:contain;cursor:grab}
+#avatarBox{width:var(--size,130px);height:var(--size,130px);flex:none;display:grid;place-items:start center}
+#avatar,#fallback{width:var(--avatar-width,var(--size,130px));height:var(--avatar-height,var(--size,130px));object-fit:contain;cursor:grab}
 #speech{max-width:170px;max-height:65px;padding:5px 7px;border-radius:10px;background:#fffaf5;overflow:hidden;overflow-wrap:anywhere}
 #speech.popping{position:relative;overflow:visible;animation:friendPop .5s ease-out forwards}
 #speech.popping:after{content:'💥';position:absolute;left:50%;top:50%;font-size:22px;animation:burst .5s ease-out forwards}
@@ -21,15 +22,19 @@
 #todo h2{font-size:13px;margin:0 0 8px}#todo ul{padding-left:18px;margin:0}#todo li{margin:5px 0;overflow-wrap:anywhere}
 [hidden]{display:none!important}@keyframes float{50%{transform:translateY(-4px) rotate(1deg)}}
 </style>
-<div id="other"><div id="speech" hidden></div><img id="avatar" alt="" draggable="false" hidden><img id="fallback" src="default-character.png" alt="친구 캐릭터" draggable="false"><div id="status"></div><div id="todo" hidden><h2>TO DO</h2><ul></ul></div></div>
+<div id="other"><div id="speech" hidden></div><div id="avatarBox"><img id="avatar" alt="" draggable="false" hidden><img id="fallback" src="default-character.png" alt="친구 캐릭터" draggable="false"></div><div id="status"></div><div id="todo" hidden><h2>TO DO</h2><ul></ul></div></div>
 <script>
 let baseAvatar='',friendPoses=[],friendPoseIndex=0,friendPoseActive=false,remoteExpiresAt=0,friendPoseIntervalSeconds=8,friendPoseTimer;
+function updateAvatarMetrics(){const image=document.querySelector('#avatar').hidden?document.querySelector('#fallback'):document.querySelector('#avatar'),size=Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size'))||130,scale=size/Math.max(image.naturalWidth||size,image.naturalHeight||size);document.documentElement.style.setProperty('--avatar-width',`${(image.naturalWidth||size)*scale}px`);document.documentElement.style.setProperty('--avatar-height',`${(image.naturalHeight||size)*scale}px`)}
+document.querySelector('#avatar').addEventListener('load',updateAvatarMetrics);
+document.querySelector('#fallback').addEventListener('load',updateAvatarMetrics);
 window.pet.onRemote(data=>{
  document.documentElement.style.setProperty('--size',`${data.displaySize||130}px`);
  const color=data.public_tasks?.find(task=>task.type==='glow-color')?.color;
  document.documentElement.style.setProperty('--glow-color',/^#[0-9a-fA-F]{6}$/.test(color)?color:'#ffe156');
  const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&data.avatar.startsWith('data:image/png;base64,');
  avatar.hidden=!valid;document.querySelector('#fallback').hidden=valid;
+ updateAvatarMetrics();
  if(valid&&baseAvatar!==data.avatar){baseAvatar=data.avatar;friendPoseIndex=0;friendPoseActive=false;avatar.src=baseAvatar}
  const seconds=Math.max(2,Math.min(12,Number(data.public_tasks?.find(task=>task.type==='poses')?.intervalSeconds)||8));
  if(seconds!==friendPoseIntervalSeconds){friendPoseIntervalSeconds=seconds;clearInterval(friendPoseTimer);friendPoseTimer=setInterval(showFriendPose,seconds*1000)}
@@ -47,7 +52,7 @@ setInterval(()=>{if(remoteExpiresAt&&Date.now()>=remoteExpiresAt)document.queryS
 window.pet.onRemotePoses(poses=>{friendPoses=Array.isArray(poses)?poses.filter(image=>typeof image==='string'&&image.startsWith('data:image/png;base64,')):[];friendPoseIndex=0;friendPoseActive=false;if(baseAvatar)document.querySelector('#avatar').src=baseAvatar});
 function showFriendPose(){if(!baseAvatar||!friendPoses.length)return;friendPoseActive=friendPoseIndex<friendPoses.length;document.querySelector('#avatar').src=friendPoseActive?friendPoses[friendPoseIndex++]:baseAvatar;if(!friendPoseActive)friendPoseIndex=0}
 friendPoseTimer=setInterval(showFriendPose,8000);
-window.pet.onRemoteSize(size=>{document.documentElement.style.setProperty('--size',`${size}px`);reportTodoBounds()});
+window.pet.onRemoteSize(size=>{document.documentElement.style.setProperty('--size',`${size}px`);updateAvatarMetrics();reportTodoBounds()});
 const other=document.querySelector('#other');
 let last=null,moved=false;
 document.addEventListener('dragstart',event=>event.preventDefault());
