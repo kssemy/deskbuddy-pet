@@ -26,7 +26,7 @@ let ownDragStart;
 let workAreas = [];
 const friendVisual = () => ({ left: (190 - data.size) / 2, right: (190 + data.size) / 2,
   top: 381 - data.size, bottom: 395 });
-let velocity = { x: 0.55, y: 0.3 };
+let velocity = { x: 1.1, y: 0.6 };
 let paused = false;
 let dragging = false;
 let ownPinned = false;
@@ -191,8 +191,8 @@ function movePet() {
       cursor.y >= window.y + visual.top && cursor.y <= window.y + visual.bottom) return;
   const b = petBounds();
   if (data.followMouse) {
-    position.x = Math.max(b.minX, Math.min(b.maxX, position.x + Math.max(-1, Math.min(1, cursor.x - 120 - position.x))));
-    position.y = Math.max(b.minY, Math.min(b.maxY, position.y + Math.max(-1, Math.min(1, cursor.y - 125 - position.y))));
+    position.x = Math.max(b.minX, Math.min(b.maxX, position.x + Math.max(-2, Math.min(2, cursor.x - 120 - position.x))));
+    position.y = Math.max(b.minY, Math.min(b.maxY, position.y + Math.max(-2, Math.min(2, cursor.y - 125 - position.y))));
   } else {
     [position.x, velocity.x] = step(position.x, velocity.x, b.minX, b.maxX);
     [position.y, velocity.y] = step(position.y, velocity.y, b.minY, b.maxY);
@@ -347,7 +347,7 @@ function showRemotePets(rows) {
       const y = area.y + Math.round(Math.random() * Math.max(0, area.height - 550));
       const window = makeWindow('other.html', { width: 190, height: 550, x, y, frame: false,
         transparent: true, alwaysOnTop: data.alwaysOnTop, skipTaskbar: true, resizable: false, hasShadow: false });
-      item = { window, x, y, vx: 0.55, vy: 0.3, hovered: false, dragging: false, pinned: false, todoBounds: null };
+      item = { window, x, y, vx: 1.1, vy: 0.6, hovered: false, dragging: false, pinned: false, todoBounds: null };
       remoteWindows.set(row.member_id, item);
       window.setIgnoreMouseEvents(true, { forward: true });
       window.webContents.on('context-menu', () => Menu.buildFromTemplate([
@@ -610,7 +610,7 @@ app.whenReady().then(() => {
   topWindow = makeWindow('top.html', { width: 68, height: 32, x: area.x + area.width - 74, y: area.y + 4,
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false });
   setInterval(refreshAllOnTop, 3000);
-  movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 30);
+  movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 60);
   remoteTimer = setInterval(syncRemote, 10000);
   if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); void queuePosePublish().catch(() => {}); }
   void offerStartupUpdate();
