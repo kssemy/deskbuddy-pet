@@ -14,10 +14,10 @@ test('friend PNG reaches every edge and crosses two monitors', () => {
   assert.deepEqual(fitToDisplays(3015, 500, areas, own), { x: 3015, y: 500 });
 });
 
-test('home button fills the upper right and wraps without overlap', () => {
+test('home button fills the lower left and wraps without overlap', () => {
   const area = { x: 0, y: 0, width: 400, height: 700 };
   assert.deepEqual([0, 1, 2].map(index => homeSlot(area, 130, index)), [
-    { x: 258, y: 75 }, { x: 116, y: 75 }, { x: 258, y: 290 }
+    { x: 12, y: 495 }, { x: 154, y: 495 }, { x: 12, y: 280 }
   ]);
 });
 

@@ -24,8 +24,8 @@ function fitToDisplays(x, y, areas, visual) {
 function homeSlot(area, size, index) {
   const gap = 12;
   const columns = Math.max(1, Math.floor((area.width - gap) / (size + gap)));
-  return { x: area.x + area.width - gap - size - (index % columns) * (size + gap),
-    y: area.y + 75 + Math.floor(index / columns) * (size + 85) };
+  return { x: area.x + gap + (index % columns) * (size + gap),
+    y: area.y + area.height - 75 - size - Math.floor(index / columns) * (size + 85) };
 }
 
 function resizeAnchoredPanel(bounds, area, requested, placement) {

@@ -607,7 +607,7 @@ app.whenReady().then(() => {
       { label: '종료', click: () => app.quit() }
     ]).popup({ window: petWindow });
   });
-  topWindow = makeWindow('top.html', { width: 68, height: 32, x: area.x + area.width - 74, y: area.y + 4,
+  topWindow = makeWindow('top.html', { width: 68, height: 32, x: area.x + 6, y: area.y + area.height - 38,
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false });
   setInterval(refreshAllOnTop, 3000);
   movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 60);
