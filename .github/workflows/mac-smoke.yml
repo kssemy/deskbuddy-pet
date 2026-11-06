@@ -55,7 +55,8 @@ jobs:
       - name: Exercise the released app
         run: |
           set -o pipefail
-          sips -s format jpeg DeskBuddy.app/Contents/Resources/app/default-character.png --out character-test.jpg >/dev/null
+          sips -s format jpeg DeskBuddy.app/Contents/Resources/app/default-character.png --out "$PWD/character-test.jpg" >/dev/null
+          test -f character-test.jpg
           node .github/scripts/mac-functional.cjs 2>&1 | tee functional.log
       - uses: actions/upload-artifact@v4
         if: always()
