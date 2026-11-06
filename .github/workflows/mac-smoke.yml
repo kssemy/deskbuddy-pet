@@ -54,8 +54,9 @@ jobs:
           screencapture -x desktop.png || true
       - name: Exercise the released app
         run: |
+          set -o pipefail
           sips -s format jpeg DeskBuddy.app/Contents/Resources/app/default-character.png --out character-test.jpg >/dev/null
-          node .github/scripts/mac-functional.cjs | tee functional.log
+          node .github/scripts/mac-functional.cjs 2>&1 | tee functional.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

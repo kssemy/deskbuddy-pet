@@ -23,6 +23,7 @@ async function openSettings() {
   await electron.evaluate(({ BrowserWindow }, files) => {
     const window = new BrowserWindow({ width: 280, height: 590, show: true, frame: false,
       webPreferences: { preload: files.preload, contextIsolation: true, nodeIntegration: false } });
+    globalThis.__deskbuddyTestWindow = window;
     window.loadFile(files.panel, { query: { mode: 'settings' } });
   }, { panel: path.join(appPath, 'panel.html'), preload: path.join(appPath, 'preload.js') });
   const page = await windowFor('panel.html?mode=settings');
