@@ -95,7 +95,10 @@ async function run() {
   await pet.evaluate(() => window.pet.openWardrobe());
   const wardrobe = await windowFor('wardrobe.html');
   await wardrobe.locator('#upload').click();
-  await wardrobe.locator('#status').getByText('옷장에 추가했어요.').waitFor();
+  await wardrobe.waitForFunction(() => !!document.querySelector('#status').textContent.trim());
+  const uploadStatus = await wardrobe.locator('#status').textContent();
+  console.log('Character upload:', uploadStatus);
+  assert.equal(uploadStatus, '옷장에 추가했어요.');
   const uploaded = await pet.evaluate(() => window.pet.load());
   assert.notEqual(uploaded.currentCharacterId, 'default');
   await wardrobe.locator('#addPoses').click();
