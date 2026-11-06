@@ -11,6 +11,8 @@ const { charactersMeet } = require('./meeting');
 const { workMinutesForDay, tasksForDay } = require('./history');
 const { envelope, fitToDisplays, homeSlot, resizeAnchoredPanel } = require('./desktop');
 const { visibleBounds, cutoutBackground } = require('./image-bounds');
+const singleInstance = app.requestSingleInstanceLock();
+if (!singleInstance) app.quit();
 
 let petWindow;
 let tray;
@@ -92,6 +94,19 @@ function isPng(file) {
   const fd = fs.openSync(file, 'r');
   try { fs.readSync(fd, header, 0, 8, 0); } finally { fs.closeSync(fd); }
   return header.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+}
+function imageAsPng(file) {
+  const original = fs.readFileSync(file);
+  const png = isPng(file);
+  if (!png && !(original[0] === 0xff && original[1] === 0xd8 && original[2] === 0xff))
+    throw new Error('PNG 또는 JPG 파일을 선택해 주세요.');
+  const image = nativeImage.createFromBuffer(original);
+  if (image.isEmpty()) throw new Error('이미지 파일을 읽을 수 없어요.');
+  const { width, height } = image.getSize();
+  if (width * height > 16_000_000) throw new Error('이미지가 너무 커요.');
+  const bitmap = image.toBitmap();
+  return cutoutBackground(bitmap, width, height) || !png
+    ? nativeImage.createFromBitmap(bitmap, { width, height }).toPNG() : original;
 }
 function loadData() {
   let saved = {};
@@ -562,11 +577,14 @@ function resizeTaskPanel(height) {
   if (next.height !== bounds.height || next.y !== bounds.y) panelWindow.setBounds(next);
 }
 
+app.on('second-instance', () => { refreshAllOnTop(true); });
 app.whenReady().then(() => {
+  if (!singleInstance) return;
   fs.rmSync(aiKeyPath(), { force: true });
   refreshWorkAreas();
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, refreshWorkAreas);
   data = loadData();
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: data.autoLaunch });
   if (fs.existsSync(imagePath()) && data.currentCharacterId === 'default') {
     const id = rememberCharacter(fs.readFileSync(imagePath()), '기존 캐릭터');
     if (data.poseFilesByCharacter.default?.length) {
@@ -647,18 +665,10 @@ ipcMain.handle('install-update', async () => {
 });
 ipcMain.on('open-release', () => { void shell.openExternal(RELEASE_URL); });
 ipcMain.handle('choose-image', async () => {
-  const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'PNG 이미지', extensions: ['png'] }] });
+  const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'PNG/JPG 이미지', extensions: ['png', 'jpg', 'jpeg'] }] });
   if (result.canceled) return publicData();
   const file = result.filePaths[0];
-  if (!isPng(file)) throw new Error('PNG 파일을 선택해 주세요.');
-  const original = fs.readFileSync(file), image = nativeImage.createFromBuffer(original);
-  if (image.isEmpty()) throw new Error('PNG 파일을 읽을 수 없어요.');
-  const { width, height } = image.getSize();
-  if (width * height > 16_000_000) throw new Error('이미지가 너무 커요.');
-  const bitmap = image.toBitmap();
-  const bytes = cutoutBackground(bitmap, width, height)
-    ? nativeImage.createFromBitmap(bitmap, { width, height }).toPNG() : original;
-  return selectCharacter(rememberCharacter(bytes, path.basename(file, '.png')));
+  return selectCharacter(rememberCharacter(imageAsPng(file), path.parse(file).name));
 });
 ipcMain.handle('activate-character', (_event, id) => selectCharacter(String(id)));
 ipcMain.handle('delete-character', (_event, id) => {
@@ -683,15 +693,15 @@ ipcMain.handle('delete-character', (_event, id) => {
 });
 ipcMain.handle('add-poses', async (_event, id) => {
   if (!wardrobeData().some(item => item.id === id)) throw new Error('옷장에 없는 캐릭터예요.');
-  const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'PNG 이미지', extensions: ['png'] }] });
+  const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'], filters: [{ name: 'PNG/JPG 이미지', extensions: ['png', 'jpg', 'jpeg'] }] });
   if (result.canceled) return publicData();
   const files = data.poseFilesByCharacter[id] ||= [];
-  if (files.length + result.filePaths.length > 12) throw new Error('캐릭터당 동작 PNG는 최대 12개까지 올릴 수 있어요.');
-  for (const file of result.filePaths) if (!isPng(file)) throw new Error('PNG 파일만 올려주세요.');
+  if (files.length + result.filePaths.length > 12) throw new Error('캐릭터당 동작 이미지는 최대 12개까지 올릴 수 있어요.');
+  const images = result.filePaths.map(imageAsPng);
   fs.mkdirSync(path.dirname(posePath('x')), { recursive: true });
-  for (const file of result.filePaths) {
+  for (const image of images) {
     const name = `pose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-    fs.copyFileSync(file, posePath(name));
+    fs.writeFileSync(posePath(name), image);
     files.push(name);
   }
   saveData();
