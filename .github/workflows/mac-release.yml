@@ -1,0 +1,35 @@
+name: Build macOS app
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub release tag (for example v0.1.32)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Package Apple Silicon and Intel apps
+        run: |
+          version="${{ inputs.tag }}"
+          version="${version#v}"
+          for arch in arm64 x64; do
+            npx @electron/packager . DeskBuddy --platform=darwin --arch="$arch" --out=dist --overwrite --app-bundle-id=com.kssemy.deskbuddy
+            ditto -c -k --sequesterRsrc --keepParent "dist/DeskBuddy-darwin-$arch/DeskBuddy.app" "DeskBuddy-mac-$arch-$version.zip"
+          done
+      - name: Upload macOS apps to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" DeskBuddy-mac-*.zip --clobber

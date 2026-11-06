@@ -400,11 +400,13 @@ async function latestRelease() {
   if (!/^\d+\.\d+\.\d+$/.test(latest)) throw new Error('버전 정보를 읽을 수 없어요.');
   const current = app.getVersion();
   return { current, latest, update: latest.localeCompare(current, undefined, { numeric: true }) > 0,
-    asset: release.assets?.find(asset => asset.name === `DeskBuddy-Windows-${latest}.zip`) };
+    asset: release.assets?.find(asset => asset.name === (process.platform === 'darwin'
+      ? `DeskBuddy-mac-${process.arch}-${latest}.zip` : `DeskBuddy-Windows-${latest}.zip`)) };
 }
 let installingUpdate = false;
 async function installUpdate(release) {
   if (installingUpdate || !release.update || !release.asset) return;
+  if (process.platform === 'darwin') { await shell.openExternal(release.asset.browser_download_url); return; }
   installingUpdate = true;
   try {
     const folder = path.join(app.getPath('userData'), 'updates', `v${release.latest}`);
@@ -431,7 +433,8 @@ async function installUpdate(release) {
   } finally { installingUpdate = false; }
 }
 async function offerStartupUpdate() {
-  if (path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe') return;
+  if (process.platform === 'darwin') { lastUpdateCheck = 0; await checkForRunningUpdate(); return; }
+  if (process.platform !== 'win32' || path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe') return;
   try {
     const release = await latestRelease();
     if (!release.update || !release.asset) return;
@@ -439,7 +442,7 @@ async function offerStartupUpdate() {
   } catch { /* 인터넷이 없어도 기존 앱은 그대로 사용합니다. */ }
 }
 async function checkForRunningUpdate() {
-  if (path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe' || installingUpdate ||
+  if (!app.isPackaged || (process.platform === 'win32' && path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe') || installingUpdate ||
       Date.now() - lastUpdateCheck < 60 * 1000) return;
   lastUpdateCheck = Date.now();
   try {
@@ -449,8 +452,8 @@ async function checkForRunningUpdate() {
     if (updateWindow && !updateWindow.isDestroyed()) return;
     const area = screen.getPrimaryDisplay().workArea;
     updateWindow = makeWindow('update.html', { width: 240, height: 78,
-      x: area.x + area.width - 246, y: area.y + 40, frame: false, transparent: true,
-      alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false }, { version: release.latest });
+      x: area.x + 80, y: area.y + area.height - 84, frame: false, transparent: true,
+      alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false }, { version: release.latest, mac: process.platform === 'darwin' ? '1' : '0' });
     updateWindow.on('closed', () => { updateWindow = null; });
   } catch { /* 다음 확인 때 재시도합니다. */ }
 }
