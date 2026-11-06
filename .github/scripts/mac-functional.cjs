@@ -6,7 +6,7 @@ const bundle = path.resolve('DeskBuddy.app');
 const executablePath = path.join(bundle, 'Contents/MacOS/DeskBuddy');
 const appPath = path.join(bundle, 'Contents/Resources/app');
 const png = path.join(appPath, 'default-character.png');
-const jpg = path.resolve('character-test.jpg');
+const jpg = path.resolve('.github/fixtures/character-test.jpg');
 let electron;
 
 async function windowFor(name) {
