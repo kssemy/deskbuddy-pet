@@ -20,15 +20,18 @@ async function windowFor(name) {
 }
 
 async function openSettings() {
-  const pet = await windowFor('pet.html');
-  await pet.evaluate(() => window.pet.openHistory());
-  const page = await windowFor('history.html');
-  await electron.evaluate(async ({ BrowserWindow }, panel) => {
-    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('history.html'));
-    window.setSize(280, 590);
-    await window.loadFile(panel, { query: { mode: 'settings' } });
-  }, path.join(appPath, 'panel.html'));
-  await page.waitForURL(/panel\.html.*mode=settings/);
+  await electron.evaluate(({ BrowserWindow, Menu }) => {
+    const build = Menu.buildFromTemplate;
+    try {
+      Menu.buildFromTemplate = template => {
+        template.find(item => item.label === '설정').click();
+        return { popup() {} };
+      };
+      BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('pet.html'))
+        .webContents.emit('context-menu');
+    } finally { Menu.buildFromTemplate = build; }
+  });
+  const page = await windowFor('panel.html?mode=settings');
   await page.locator('#settingsView').waitFor({ state: 'visible' });
   return page;
 }
