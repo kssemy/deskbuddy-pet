@@ -1,0 +1,55 @@
+name: Test released macOS app
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to test
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download the published app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" --pattern "DeskBuddy-mac-${{ matrix.arch }}-*.zip"
+          ditto -x -k DeskBuddy-mac-*.zip .
+      - name: Launch the app on macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$PWD/DeskBuddy.app/Contents/MacOS/DeskBuddy"
+          test -x "$exe"
+          expected="${{ matrix.arch }}"
+          if [ "$expected" = x64 ]; then expected=x86_64; fi
+          test "$(uname -m)" = "$expected"
+          test "$(lipo -archs "$exe")" = "$expected"
+          "$exe" --user-data-dir="$RUNNER_TEMP/deskbuddy-smoke" >deskbuddy.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          sleep 15
+          cat deskbuddy.log
+          kill -0 "$pid"
+          if grep -E 'Uncaught Exception|A JavaScript error occurred' deskbuddy.log; then exit 1; fi
+          screencapture -x desktop.png || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-smoke-${{ matrix.arch }}
+          path: |
+            deskbuddy.log
+            desktop.png
