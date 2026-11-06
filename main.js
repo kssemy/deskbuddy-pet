@@ -401,7 +401,7 @@ async function latestRelease() {
   const current = app.getVersion();
   return { current, latest, update: latest.localeCompare(current, undefined, { numeric: true }) > 0,
     asset: release.assets?.find(asset => asset.name === (process.platform === 'darwin'
-      ? `DeskBuddy-mac-${process.arch}-${latest}.zip` : `DeskBuddy-Windows-${latest}.zip`)) };
+      ? `DeskBuddy-Mac-${latest}.zip` : `DeskBuddy-Windows-${latest}.zip`)) };
 }
 let installingUpdate = false;
 async function installUpdate(release) {

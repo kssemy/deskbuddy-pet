@@ -32,8 +32,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" --pattern "DeskBuddy-mac-${{ matrix.arch }}-*.zip"
-          ditto -x -k DeskBuddy-mac-*.zip .
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" --pattern "DeskBuddy-Mac-*.zip"
+          ditto -x -k DeskBuddy-Mac-*.zip .
       - name: Launch the app on macOS
         shell: bash
         run: |
@@ -43,7 +43,7 @@ jobs:
           expected="${{ matrix.arch }}"
           if [ "$expected" = x64 ]; then expected=x86_64; fi
           test "$(uname -m)" = "$expected"
-          test "$(lipo -archs "$exe")" = "$expected"
+          lipo -archs "$exe" | grep -qw "$expected"
           "$exe" --user-data-dir="$RUNNER_TEMP/deskbuddy-smoke" >deskbuddy.log 2>&1 &
           pid=$!
           trap 'kill "$pid" 2>/dev/null || true' EXIT

@@ -2,13 +2,20 @@
 
 Windows와 macOS에서 캐릭터가 투명한 창으로 바탕화면 위를 움직이는 테스트 버전입니다.
 
+## 다운로드 · v0.1.34
+
+- **Windows용:** [DeskBuddy-Windows-0.1.34.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.34/DeskBuddy-Windows-0.1.34.zip)
+- **Mac용:** [DeskBuddy-Mac-0.1.34.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.34/DeskBuddy-Mac-0.1.34.zip) · Apple Silicon과 Intel 모두 실행
+
+[모든 버전 보기](https://github.com/kssemy/deskbuddy-pet/releases/latest)
+
 ## 실행
 
 `run.cmd`를 더블클릭하거나 이 폴더에서 `npm start`를 실행합니다. 처음 실행하는 PC에서는 `npm install`이 필요합니다. 별도 `.exe` 빌드는 필요하지 않습니다.
 
 Windows ZIP을 만들 때는 압축하기 전에 `npm run stamp-exe -- <DeskBuddy.exe 경로>`를 실행해 작업 관리자에 `DeskBuddy`로 표시되게 합니다.
 
-Mac에서는 GitHub Releases의 `DeskBuddy-mac-arm64-버전.zip`(Apple Silicon) 또는 `DeskBuddy-mac-x64-버전.zip`(Intel)을 받아 앱을 응용 프로그램 폴더에 넣습니다. 현재 Mac 빌드는 Apple 서명·공증을 하지 않아 첫 실행 때 macOS의 보안 설정에서 열기를 허용해야 할 수 있습니다. Mac의 새 버전 알림은 다운로드로 연결되며 앱 교체는 직접 해야 합니다. Mac 빌드에서는 컴퓨터 로그인 시 자동 실행 설정을 숨깁니다. 계정 보관은 서명·공증 전까지 안정적으로 동작하지 않을 수 있습니다.
+Mac에서는 GitHub Releases의 `DeskBuddy-Mac-버전.zip`을 받아 앱을 응용 프로그램 폴더에 넣습니다. Apple Silicon과 Intel에서 같은 파일을 사용합니다. 현재 Mac 빌드는 Apple 서명·공증을 하지 않아 첫 실행 때 macOS의 보안 설정에서 열기를 허용해야 할 수 있습니다. Mac의 새 버전 알림은 다운로드로 연결되며 앱 교체는 직접 해야 합니다. Mac 빌드에서는 컴퓨터 로그인 시 자동 실행 설정을 숨깁니다. 계정 보관은 서명·공증 전까지 안정적으로 동작하지 않을 수 있습니다.
 
 ## 지금 시험할 수 있는 것
 
