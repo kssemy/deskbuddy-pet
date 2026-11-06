@@ -20,13 +20,15 @@ async function windowFor(name) {
 }
 
 async function openSettings() {
-  await electron.evaluate(({ BrowserWindow }, files) => {
-    const window = new BrowserWindow({ width: 280, height: 590, show: true, frame: false,
-      webPreferences: { preload: files.preload, contextIsolation: true, nodeIntegration: false } });
-    globalThis.__deskbuddyTestWindow = window;
-    window.loadFile(files.panel, { query: { mode: 'settings' } });
-  }, { panel: path.join(appPath, 'panel.html'), preload: path.join(appPath, 'preload.js') });
-  const page = await windowFor('panel.html?mode=settings');
+  const pet = await windowFor('pet.html');
+  await pet.evaluate(() => window.pet.openHistory());
+  const page = await windowFor('history.html');
+  await electron.evaluate(async ({ BrowserWindow }, panel) => {
+    const window = BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('history.html'));
+    window.setSize(280, 590);
+    await window.loadFile(panel, { query: { mode: 'settings' } });
+  }, path.join(appPath, 'panel.html'));
+  await page.waitForURL(/panel\.html.*mode=settings/);
   await page.locator('#settingsView').waitFor({ state: 'visible' });
   return page;
 }
