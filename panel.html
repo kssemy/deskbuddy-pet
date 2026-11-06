@@ -44,7 +44,7 @@ function render(data){
  document.querySelector('#opacityValue').textContent=opacity.value+'%';
  const glowColor=document.querySelector('#glowColor');if(document.activeElement!==glowColor)glowColor.value=data.glowColor||'#ffe156';
  for(const key of ['workStart','workEnd','lunchStart','lunchEnd','followMouse','alwaysOnTop','autoLaunch']){const input=document.querySelector('#'+key);if(document.activeElement!==input)input.type==='checkbox'?input.checked=data[key]:input.value=data[key]}
- document.querySelector('#completedTodos').value=data.completedTodos||'bottom';
+ document.querySelector('#completedTodos').value=data.completedTodos||'bottom';document.querySelector('#autoLaunch').closest('.setting').hidden=data.platform!=='win32';
  document.querySelector('#shareTodos').checked=!!data.shareTodos;
  const remote=data.remote||{};document.querySelector('#connection').textContent=remote.error||(remote.connected?remote.name+' · 연결됨 · '+(remote.checked?(remote.friendCount?`친구 ${remote.friendCount}명 접속 중`:'나만 접속 중'):'친구 확인 중…'):'아직 친구와 연결하지 않았어요.');
  document.querySelector('#loginForm').hidden=!!remote.connected;document.querySelector('#loginHelp').hidden=!!remote.connected;document.querySelector('#disconnect').hidden=!remote.connected;

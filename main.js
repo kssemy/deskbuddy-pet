@@ -162,7 +162,7 @@ function saveData() {
 }
 function publicData() {
   const wardrobe = wardrobeData();
-  return { ...data, image: imageUrl(visibleImagePath(displayImagePath())),
+  return { ...data, platform: process.platform, image: imageUrl(visibleImagePath(displayImagePath())),
     wardrobe,
     workStatus: workState(new Date(), data),
     remote: { connected: !!remoteSession, name: remoteSession?.name || '', error: remoteError,
@@ -587,7 +587,7 @@ app.whenReady().then(() => {
   refreshWorkAreas();
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, refreshWorkAreas);
   data = loadData();
-  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: data.autoLaunch });
+  if (app.isPackaged && process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: data.autoLaunch });
   if (fs.existsSync(imagePath()) && data.currentCharacterId === 'default') {
     const id = rememberCharacter(fs.readFileSync(imagePath()), '기존 캐릭터');
     if (data.poseFilesByCharacter.default?.length) {
@@ -774,7 +774,7 @@ ipcMain.handle('set-settings', async (_event, settings) => {
     if (/^([01]\d|2[0-3]):[0-5]\d$/.test(settings[key])) data[key] = settings[key];
   data.followMouse = !!settings.followMouse;
   data.alwaysOnTop = !!settings.alwaysOnTop;
-  data.autoLaunch = !!settings.autoLaunch;
+  data.autoLaunch = process.platform === 'win32' && !!settings.autoLaunch;
   data.completedTodos = settings.completedTodos === 'hide' ? 'hide' : 'bottom';
   if (/^#[0-9a-fA-F]{6}$/.test(settings.glowColor)) data.glowColor = settings.glowColor;
   for (const win of [petWindow, panelWindow, ...[...remoteWindows.values()].map(item => item.window)])
@@ -782,7 +782,7 @@ ipcMain.handle('set-settings', async (_event, settings) => {
   if (data.alwaysOnTop) refreshAllOnTop();
   const loginOptions = app.isPackaged ? { openAtLogin: data.autoLaunch } :
     { openAtLogin: data.autoLaunch, path: process.execPath, args: [app.getAppPath()] };
-  app.setLoginItemSettings(loginOptions);
+  if (process.platform === 'win32') app.setLoginItemSettings(loginOptions);
   saveData();
   try { await saveAccountSchedule(); }
   catch { throw new Error('이 PC에는 저장했지만 계정에는 저장하지 못했어요. 인터넷 연결을 확인한 뒤 다시 저장해 주세요.'); }
