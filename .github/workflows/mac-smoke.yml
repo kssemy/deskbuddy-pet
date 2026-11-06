@@ -22,6 +22,12 @@ jobs:
             arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
       - name: Download the published app
         env:
           GH_TOKEN: ${{ github.token }}
@@ -46,6 +52,10 @@ jobs:
           kill -0 "$pid"
           if grep -E 'Uncaught Exception|A JavaScript error occurred' deskbuddy.log; then exit 1; fi
           screencapture -x desktop.png || true
+      - name: Exercise the released app
+        run: |
+          sips -s format jpeg DeskBuddy.app/Contents/Resources/app/default-character.png --out character-test.jpg >/dev/null
+          node .github/scripts/mac-functional.cjs | tee functional.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -53,3 +63,4 @@ jobs:
           path: |
             deskbuddy.log
             desktop.png
+            functional.log
