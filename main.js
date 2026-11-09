@@ -410,7 +410,7 @@ async function installUpdate(release) {
   installingUpdate = true;
   try {
     const folder = path.join(app.getPath('userData'), 'updates', `v${release.latest}`);
-    const exe = path.join(folder, `DeskBuddy-Windows-${release.latest}`, 'DeskBuddy.exe');
+    const exe = path.join(folder, 'DeskBuddy.exe');
     if (!fs.existsSync(exe)) {
       fs.mkdirSync(folder, { recursive: true });
       const zip = path.join(folder, 'download.zip');

@@ -2,10 +2,10 @@
 
 Windows와 macOS에서 캐릭터가 투명한 창으로 바탕화면 위를 움직이는 테스트 버전입니다.
 
-## 다운로드 · v0.1.34
+## 다운로드 · v0.1.35
 
-- **Windows용:** [DeskBuddy-Windows-0.1.34.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.34/DeskBuddy-Windows-0.1.34.zip)
-- **Mac용:** [DeskBuddy-Mac-0.1.34.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.34/DeskBuddy-Mac-0.1.34.zip) · Apple Silicon과 Intel 모두 실행
+- **Windows용:** [DeskBuddy-Windows-0.1.35.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.35/DeskBuddy-Windows-0.1.35.zip)
+- **Mac용:** [DeskBuddy-Mac-0.1.35.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.35/DeskBuddy-Mac-0.1.35.zip) · Apple Silicon과 Intel 모두 실행
 
 [모든 버전 보기](https://github.com/kssemy/deskbuddy-pet/releases/latest)
 
@@ -50,3 +50,4 @@ Supabase에는 [supabase-pet.sql](supabase-pet.sql)과 [supabase-pet-schedule.sq
 연결한 앱이 켜져 있는 친구의 PNG와 공개 TO DO가 표시됩니다. 친구 캐릭터를 클릭하면 공개 TO DO가 열리고 닫힙니다. 친구를 드래그하면 내 화면에서 위치가 옮겨지고 계속 자동 이동하며, 우클릭으로만 고정할 수 있습니다. 친구 캐릭터를 세 번 빠르게 누르면 양쪽 화면에서 짧게 한 번 흔들립니다. 내 캐릭터 옆 작은 점을 누르면 양쪽 화면에서 1초간 빛납니다. 두 캐릭터가 내 화면에서 만나면 하이파이브가 한 번 나타나며, 떨어졌다 다시 만나면 반복될 수 있습니다. 앱을 끄면 캐릭터를 제거하고, 비정상 종료 때는 마지막 접속 40초 후 사라집니다.
 
 설정의 연결 상태에는 현재 화면에 나타나는 친구 수가 함께 표시됩니다. 친구가 없으면 `나만 접속 중`, 서버 확인 중에는 `친구 확인 중…`으로 표시합니다.
+
