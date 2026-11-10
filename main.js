@@ -438,9 +438,7 @@ async function installUpdate(release) {
       fs.mkdirSync(folder, { recursive: true });
       const zip = path.join(folder, 'download.zip');
       await downloadVerified(release.asset, zip);
-      const quote = value => `'${value.replace(/'/g, "''")}'`;
-      await new Promise((resolve, reject) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-        `Expand-Archive -LiteralPath ${quote(zip)} -DestinationPath ${quote(folder)} -Force`],
+      await new Promise((resolve, reject) => execFile('tar.exe', ['-xf', zip, '-C', folder],
       { windowsHide: true }, error => error ? reject(error) : resolve()));
       fs.rmSync(zip, { force: true });
     }
