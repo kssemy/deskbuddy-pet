@@ -2,10 +2,10 @@
 
 Windows와 macOS에서 캐릭터가 투명한 창으로 바탕화면 위를 움직이는 테스트 버전입니다.
 
-## 다운로드 · v0.1.35
+## 다운로드
 
-- **Windows용:** [DeskBuddy-Windows-0.1.35.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.35/DeskBuddy-Windows-0.1.35.zip)
-- **Mac용:** [DeskBuddy-Mac-0.1.35.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.35/DeskBuddy-Mac-0.1.35.zip) · Apple Silicon과 Intel 모두 실행
+- **Windows용 · v0.1.36:** [DeskBuddy-Windows-0.1.36.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.36/DeskBuddy-Windows-0.1.36.zip)
+- **Mac용 · v0.1.35:** [DeskBuddy-Mac-0.1.35.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.35/DeskBuddy-Mac-0.1.35.zip) · Apple Silicon과 Intel 모두 실행
 
 [모든 버전 보기](https://github.com/kssemy/deskbuddy-pet/releases/latest)
 

@@ -72,10 +72,15 @@ function displayImagePath() {
   if (id && /^[a-f0-9]{64}$/.test(id) && fs.existsSync(wardrobePath(id))) return wardrobePath(id);
   return fs.existsSync(imagePath()) ? imagePath() : path.join(__dirname, 'default-character.png');
 }
-function wardrobePath(id) { return path.join(app.getPath('userData'), 'wardrobe', `${id}.png`); }
+function wardrobePath(id) {
+  const folder = path.join(app.getPath('userData'), 'wardrobe');
+  const gif = path.join(folder, `${id}.gif`);
+  return fs.existsSync(gif) ? gif : path.join(folder, `${id}.png`);
+}
 function posePath(name) { return path.join(app.getPath('userData'), 'poses', name); }
 function imageUrl(file) { return `${pathToFileURL(file).href}?v=${fs.statSync(file).mtimeMs}`; }
 function visibleImagePath(file) {
+  if (path.extname(file).toLowerCase() === '.gif') return file;
   const stat = fs.statSync(file);
   const name = createHash('sha1').update(`${file}:${stat.size}:${stat.mtimeMs}`).digest('hex') + '.png';
   const output = path.join(app.getPath('userData'), 'visible-images', name);
@@ -95,8 +100,16 @@ function isPng(file) {
   try { fs.readSync(fd, header, 0, 8, 0); } finally { fs.closeSync(fd); }
   return header.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
 }
-function imageAsPng(file) {
+function imageBytes(file, allowGif = false) {
   const original = fs.readFileSync(file);
+  const gif = original.subarray(0, 6).toString('ascii');
+  if (allowGif && (gif === 'GIF87a' || gif === 'GIF89a')) {
+    if (original.length < 14) throw new Error('GIF 파일을 읽을 수 없어요.');
+    const width = original.readUInt16LE(6), height = original.readUInt16LE(8);
+    if (!width || !height || width * height > 16_000_000 || original.length > 10_000_000)
+      throw new Error('GIF 크기가 너무 커요.');
+    return original;
+  }
   const png = isPng(file);
   if (!png && !(original[0] === 0xff && original[1] === 0xd8 && original[2] === 0xff))
     throw new Error('PNG 또는 JPG 파일을 선택해 주세요.');
@@ -124,8 +137,9 @@ function loadData() {
 }
 function rememberCharacter(bytes, label) {
   const id = createHash('sha256').update(bytes).digest('hex');
-  fs.mkdirSync(path.dirname(wardrobePath(id)), { recursive: true });
-  if (!fs.existsSync(wardrobePath(id))) fs.writeFileSync(wardrobePath(id), bytes);
+  const file = path.join(app.getPath('userData'), 'wardrobe', `${id}.${bytes.subarray(0, 3).toString('ascii') === 'GIF' ? 'gif' : 'png'}`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (!fs.existsSync(file)) fs.writeFileSync(file, bytes);
   if (!data.wardrobe.some(item => item.id === id)) {
     data.wardrobe.unshift({ id, label: String(label || '캐릭터').slice(0, 60), addedAt: Date.now() });
   }
@@ -146,6 +160,7 @@ function selectCharacter(id) {
   if (id !== 'default' && (!/^[a-f0-9]{64}$/.test(id) || !data.wardrobe.some(item => item.id === id && fs.existsSync(wardrobePath(id)))))
     throw new Error('옷장에 없는 캐릭터예요.');
   if (id === 'default') fs.rmSync(imagePath(), { force: true });
+  else if (path.extname(wardrobePath(id)) === '.gif') fs.rmSync(imagePath(), { force: true });
   else fs.copyFileSync(wardrobePath(id), imagePath());
   const changed = data.currentCharacterId !== id;
   if (changed) {
@@ -305,8 +320,16 @@ function saveRemoteSession() {
     fs.writeFileSync(sessionPath(), safeStorage.encryptString(JSON.stringify(remoteSession)));
   else fs.rmSync(sessionPath(), { force: true });
 }
-function avatarData() {
-  const image = nativeImage.createFromPath(visibleImagePath(displayImagePath()));
+async function avatarData() {
+  const file = visibleImagePath(displayImagePath());
+  if (path.extname(file).toLowerCase() === '.gif') {
+    const bytes = fs.readFileSync(file);
+    const animated = `data:image/gif;base64,${bytes.toString('base64')}`;
+    if (animated.length <= 200000) return animated;
+  }
+  const image = path.extname(file).toLowerCase() === '.gif'
+    ? await nativeImage.createThumbnailFromPath(file, { width: 128, height: 128 }).catch(() => nativeImage.createEmpty())
+    : nativeImage.createFromPath(file);
   if (image.isEmpty()) return null;
   const { width, height } = image.getSize();
   const scale = 128 / Math.max(width, height);
@@ -463,7 +486,7 @@ async function sendRemote() {
     const state = workState(new Date(), data);
     await remoteApi('/pet_presence?on_conflict=member_id', { method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ member_id: remoteSession.id, name: remoteSession.name, avatar: avatarData(), speech: data.speech || '',
+      body: JSON.stringify({ member_id: remoteSession.id, name: remoteSession.name, avatar: await avatarData(), speech: data.speech || '',
         status: state,
         public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
           .map(task => ({ text: task.text, done: task.done })), { type: 'poses', revision: data.poseRevision || '', intervalSeconds: poseIntervalSecondsFor(data.currentCharacterId) },
@@ -668,10 +691,10 @@ ipcMain.handle('install-update', async () => {
 });
 ipcMain.on('open-release', () => { void shell.openExternal(RELEASE_URL); });
 ipcMain.handle('choose-image', async () => {
-  const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'PNG/JPG 이미지', extensions: ['png', 'jpg', 'jpeg'] }] });
+  const result = await dialog.showOpenDialog({ properties: ['openFile'], filters: [{ name: 'PNG/JPG/GIF 이미지', extensions: ['png', 'jpg', 'jpeg', 'gif'] }] });
   if (result.canceled) return publicData();
   const file = result.filePaths[0];
-  return selectCharacter(rememberCharacter(imageAsPng(file), path.parse(file).name));
+  return selectCharacter(rememberCharacter(imageBytes(file, true), path.parse(file).name));
 });
 ipcMain.handle('activate-character', (_event, id) => selectCharacter(String(id)));
 ipcMain.handle('delete-character', (_event, id) => {
@@ -700,7 +723,7 @@ ipcMain.handle('add-poses', async (_event, id) => {
   if (result.canceled) return publicData();
   const files = data.poseFilesByCharacter[id] ||= [];
   if (files.length + result.filePaths.length > 12) throw new Error('캐릭터당 동작 이미지는 최대 12개까지 올릴 수 있어요.');
-  const images = result.filePaths.map(imageAsPng);
+  const images = result.filePaths.map(file => imageBytes(file));
   fs.mkdirSync(path.dirname(posePath('x')), { recursive: true });
   for (const image of images) {
     const name = `pose-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;

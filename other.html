@@ -32,7 +32,7 @@ window.pet.onRemote(data=>{
  document.documentElement.style.setProperty('--size',`${data.displaySize||130}px`);
  const color=data.public_tasks?.find(task=>task.type==='glow-color')?.color;
  document.documentElement.style.setProperty('--glow-color',/^#[0-9a-fA-F]{6}$/.test(color)?color:'#ffe156');
- const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&data.avatar.startsWith('data:image/png;base64,');
+ const avatar=document.querySelector('#avatar'),valid=typeof data.avatar==='string'&&/^data:image\/(png|gif);base64,/.test(data.avatar);
  avatar.hidden=!valid;document.querySelector('#fallback').hidden=valid;
  updateAvatarMetrics();
  if(valid&&baseAvatar!==data.avatar){baseAvatar=data.avatar;friendPoseIndex=0;friendPoseActive=false;avatar.src=baseAvatar}
