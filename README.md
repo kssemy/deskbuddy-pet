@@ -8,6 +8,8 @@ Windows에서 캐릭터가 투명한 창으로 바탕화면 위를 움직이는 
 
 [모든 버전 보기](https://github.com/kssemy/deskbuddy-pet/releases/latest)
 
+이전 버전의 업데이트 버튼이 멈추면 DeskBuddy를 종료하고 Windows ZIP의 압축을 푼 뒤, 맨 위의 `DeskBuddy.exe`를 한 번 실행해 주세요. 할 일과 캐릭터 설정은 유지되며 이후 업데이트는 앱에서 진행됩니다.
+
 ## 실행
 
 `run.cmd`를 더블클릭하거나 이 폴더에서 `npm start`를 실행합니다. 처음 실행하는 PC에서는 `npm install`이 필요합니다. 별도 `.exe` 빌드는 필요하지 않습니다.
