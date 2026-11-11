@@ -64,6 +64,16 @@ const today = () => {
 };
 
 function dataPath() { return path.join(app.getPath('userData'), 'prototype.json'); }
+function syncWindowsStartup() {
+  if (process.platform !== 'win32' || !app.isPackaged) return;
+  const shortcut = path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'DeskBuddy.lnk');
+  if (data.autoLaunch) {
+    fs.mkdirSync(path.dirname(shortcut), { recursive: true });
+    if (!shell.writeShortcutLink(shortcut, 'create', { target: process.execPath, cwd: path.dirname(process.execPath), description: 'DeskBuddy' }))
+      throw new Error('Windows 자동 실행을 등록하지 못했어요.');
+  } else fs.rmSync(shortcut, { force: true });
+  app.setLoginItemSettings({ openAtLogin: false });
+}
 function sessionPath() { return path.join(app.getPath('userData'), 'pet-account-session.bin'); }
 function aiKeyPath() { return path.join(app.getPath('userData'), 'openai-key.bin'); }
 function imagePath() { return path.join(app.getPath('userData'), 'character.png'); }
@@ -470,13 +480,19 @@ async function checkForRunningUpdate() {
     const release = await latestRelease();
     if (!release.update || !release.asset || ignoredRelease === release.latest) return;
     pendingRelease = release;
-    if (updateWindow && !updateWindow.isDestroyed()) return;
-    const area = screen.getPrimaryDisplay().workArea;
-    updateWindow = makeWindow('update.html', { width: 240, height: 78,
-      x: area.x + 80, y: area.y + area.height - 84, frame: false, transparent: true,
-      alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false }, { version: release.latest, mac: process.platform === 'darwin' ? '1' : '0' });
-    updateWindow.on('closed', () => { updateWindow = null; });
+    showUpdateNotice(release.latest);
   } catch { /* 다음 확인 때 재시도합니다. */ }
+}
+function showUpdateNotice(version, done = false) {
+  if (updateWindow && !updateWindow.isDestroyed()) return;
+  const area = screen.getPrimaryDisplay().workArea;
+  updateWindow = makeWindow('update.html', { width: 240, height: 78,
+    x: area.x + 80, y: area.y + area.height - 84, frame: false, transparent: true,
+    alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false },
+  { version, done: done ? '1' : '0', mac: process.platform === 'darwin' ? '1' : '0' });
+  const notice = updateWindow;
+  notice.on('closed', () => { if (updateWindow === notice) updateWindow = null; });
+  if (done) setTimeout(() => { if (!notice.isDestroyed()) notice.close(); }, 8000);
 }
 async function sendRemote() {
   if (!remoteSession) return;
@@ -608,7 +624,9 @@ app.whenReady().then(() => {
   refreshWorkAreas();
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, refreshWorkAreas);
   data = loadData();
-  if (app.isPackaged && process.platform === 'win32') app.setLoginItemSettings({ openAtLogin: data.autoLaunch });
+  const updateCompleted = app.isPackaged && (data.lastVersion ? data.lastVersion !== app.getVersion() : data.sessions.length > 0);
+  if (app.isPackaged) data.lastVersion = app.getVersion();
+  try { syncWindowsStartup(); } catch (error) { console.error(error); }
   if (fs.existsSync(imagePath()) && data.currentCharacterId === 'default') {
     const id = rememberCharacter(fs.readFileSync(imagePath()), '기존 캐릭터');
     if (data.poseFilesByCharacter.default?.length) {
@@ -651,6 +669,7 @@ app.whenReady().then(() => {
   });
   topWindow = makeWindow('top.html', { width: 68, height: 32, x: area.x + 6, y: area.y + area.height - 38,
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true, resizable: false, hasShadow: false });
+  if (updateCompleted) showUpdateNotice(app.getVersion(), true);
   setInterval(refreshAllOnTop, 3000);
   movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 60);
   remoteTimer = setInterval(syncRemote, 10000);
@@ -801,9 +820,7 @@ ipcMain.handle('set-settings', async (_event, settings) => {
   for (const win of [petWindow, panelWindow, ...[...remoteWindows.values()].map(item => item.window)])
     if (win && !win.isDestroyed()) win.setAlwaysOnTop(data.alwaysOnTop, 'screen-saver');
   if (data.alwaysOnTop) refreshAllOnTop();
-  const loginOptions = app.isPackaged ? { openAtLogin: data.autoLaunch } :
-    { openAtLogin: data.autoLaunch, path: process.execPath, args: [app.getAppPath()] };
-  if (process.platform === 'win32') app.setLoginItemSettings(loginOptions);
+  syncWindowsStartup();
   saveData();
   try { await saveAccountSchedule(); }
   catch { throw new Error('이 PC에는 저장했지만 계정에는 저장하지 못했어요. 인터넷 연결을 확인한 뒤 다시 저장해 주세요.'); }

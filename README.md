@@ -4,7 +4,7 @@ Windows에서 캐릭터가 투명한 창으로 바탕화면 위를 움직이는 
 
 ## 다운로드
 
-- **Windows용 · v0.1.38:** [DeskBuddy-Windows-0.1.38.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.38/DeskBuddy-Windows-0.1.38.zip)
+- **Windows용 · v0.1.39:** [DeskBuddy-Windows-0.1.39.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.39/DeskBuddy-Windows-0.1.39.zip)
 
 [모든 버전 보기](https://github.com/kssemy/deskbuddy-pet/releases/latest)
 
