@@ -9,11 +9,13 @@ class DeskBuddySetup {
   const string Version = "0.1.40";
 
   [STAThread]
-  static void Main() {
+  static int Main(string[] args) {
+    bool verify = args.Length == 2 && args[0] == "--verify-only";
     try {
-      string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "DeskBuddy", "v" + Version);
+      string root = verify ? Path.GetFullPath(args[1]) : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+      string folder = Path.Combine(root, "Programs", "DeskBuddy", "v" + Version);
       string exe = Path.Combine(folder, "DeskBuddy.exe");
-      foreach (Process process in Process.GetProcessesByName("DeskBuddy")) {
+      if (!verify) foreach (Process process in Process.GetProcessesByName("DeskBuddy")) {
         try { process.Kill(); process.WaitForExit(10000); } catch (Exception) { /* Another user's process may be protected. */ }
       }
       Directory.CreateDirectory(folder);
@@ -29,17 +31,23 @@ class DeskBuddySetup {
         }
       }
       if (!File.Exists(exe)) throw new Exception("DeskBuddy.exe를 찾을 수 없어요.");
-      string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+      string desktop = verify ? Path.Combine(root, "Desktop") : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+      Directory.CreateDirectory(desktop);
       dynamic shortcut = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell"));
       dynamic link = shortcut.CreateShortcut(Path.Combine(desktop, "DeskBuddy.lnk"));
       link.TargetPath = exe;
       link.WorkingDirectory = folder;
       link.Description = "DeskBuddy";
       link.Save();
-      Process.Start(new ProcessStartInfo(exe, "--enable-auto-start") { WorkingDirectory = folder, UseShellExecute = false });
-      MessageBox.Show("DeskBuddy v" + Version + " 설치가 끝났어요. 바탕화면 바로가기와 자동 시작도 설정했어요.", "DeskBuddy", MessageBoxButtons.OK, MessageBoxIcon.Information);
+      if (!verify) {
+        Process.Start(new ProcessStartInfo(exe, "--enable-auto-start") { WorkingDirectory = folder, UseShellExecute = false });
+        MessageBox.Show("DeskBuddy v" + Version + " 설치가 끝났어요. 바탕화면 바로가기와 자동 시작도 설정했어요.", "DeskBuddy", MessageBoxButtons.OK, MessageBoxIcon.Information);
+      }
+      return 0;
     } catch (Exception error) {
-      MessageBox.Show("설치를 완료하지 못했어요.\n" + error.Message, "DeskBuddy", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      if (!verify) MessageBox.Show("설치를 완료하지 못했어요.\n" + error.Message, "DeskBuddy", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      else File.WriteAllText(Path.Combine(Path.GetFullPath(args[1]), "install-error.txt"), error.ToString());
+      return 1;
     }
   }
 }
