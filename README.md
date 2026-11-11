@@ -4,11 +4,12 @@ Windows에서 캐릭터가 투명한 창으로 바탕화면 위를 움직이는 
 
 ## 다운로드
 
-- **Windows용 · v0.1.39:** [DeskBuddy-Windows-0.1.39.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.39/DeskBuddy-Windows-0.1.39.zip)
+- **Windows 간편 설치 · v0.1.40:** [DeskBuddy-Setup-Windows-0.1.40.exe](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.40/DeskBuddy-Setup-Windows-0.1.40.exe)
+- **Windows ZIP · v0.1.40:** [DeskBuddy-Windows-0.1.40.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.40/DeskBuddy-Windows-0.1.40.zip)
 
 [모든 버전 보기](https://github.com/kssemy/deskbuddy-pet/releases/latest)
 
-이전 버전의 업데이트 버튼이 멈추면 DeskBuddy를 종료하고 Windows ZIP의 압축을 푼 뒤, 맨 위의 `DeskBuddy.exe`를 한 번 실행해 주세요. 할 일과 캐릭터 설정은 유지되며 이후 업데이트는 앱에서 진행됩니다.
+간편 설치 파일을 한 번 실행하면 기존 DeskBuddy를 닫고 새 버전을 설치한 뒤 실행하며, 자동 시작과 바탕화면 바로가기를 설정합니다. 기존 할 일, 캐릭터, 로그인 데이터는 유지됩니다. 이후 업데이트는 앱에서 진행됩니다.
 
 ## 실행
 

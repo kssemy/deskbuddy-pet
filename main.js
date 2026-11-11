@@ -72,6 +72,10 @@ function syncWindowsStartup() {
     if (!shell.writeShortcutLink(shortcut, 'create', { target: process.execPath, cwd: path.dirname(process.execPath), description: 'DeskBuddy' }))
       throw new Error('Windows 자동 실행을 등록하지 못했어요.');
   } else fs.rmSync(shortcut, { force: true });
+  const desktopShortcut = path.join(app.getPath('desktop'), 'DeskBuddy.lnk');
+  if (fs.existsSync(desktopShortcut) && !shell.writeShortcutLink(desktopShortcut, 'update', {
+    target: process.execPath, cwd: path.dirname(process.execPath), description: 'DeskBuddy' }))
+    throw new Error('바탕화면 바로가기를 갱신하지 못했어요.');
   app.setLoginItemSettings({ openAtLogin: false });
 }
 function sessionPath() { return path.join(app.getPath('userData'), 'pet-account-session.bin'); }
@@ -624,6 +628,7 @@ app.whenReady().then(() => {
   refreshWorkAreas();
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(event, refreshWorkAreas);
   data = loadData();
+  if (process.argv.includes('--enable-auto-start')) data.autoLaunch = true;
   const updateCompleted = app.isPackaged && (data.lastVersion ? data.lastVersion !== app.getVersion() : data.sessions.length > 0);
   if (app.isPackaged) data.lastVersion = app.getVersion();
   try { syncWindowsStartup(); } catch (error) { console.error(error); }
