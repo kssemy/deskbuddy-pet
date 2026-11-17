@@ -6,7 +6,6 @@ const query=new URLSearchParams(location.search),mac=query.get('mac')==='1',done
 const button=document.querySelector('#restart');
 document.querySelector('#message').textContent=done?'v'+query.get('version')+' 업데이트 완료!':'새 버전 '+query.get('version')+'이 있어요';
 button.hidden=done;
-if(mac&&!done)button.textContent='맥용 파일 다운로드';
 document.querySelector('#later').onclick=()=>window.pet.dismissUpdate();
-button.onclick=async()=>{button.disabled=true;button.textContent='업데이트 중…';try{await window.pet.applyAvailableUpdate()}finally{button.disabled=false;button.textContent=mac?'맥용 파일 다운로드':'업데이트 후 재시작'}};
+button.onclick=async()=>{button.disabled=true;button.textContent='업데이트 중…';try{await window.pet.applyAvailableUpdate()}finally{button.disabled=false;button.textContent='업데이트 후 재시작'}};
 </script></html>

@@ -52,6 +52,7 @@ jobs:
           gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" --pattern "DeskBuddy-Mac-*.zip"
           ditto -x -k DeskBuddy-Mac-*.zip .
       - name: Launch the app on macOS
+        timeout-minutes: 2
         shell: bash
         run: |
           set -euo pipefail
@@ -68,7 +69,6 @@ jobs:
           cat deskbuddy.log
           kill -0 "$pid"
           if grep -E 'Uncaught Exception|A JavaScript error occurred' deskbuddy.log; then exit 1; fi
-          screencapture -x desktop.png || true
       - name: Exercise the released app
         run: |
           set -o pipefail

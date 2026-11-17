@@ -15,7 +15,7 @@ const { _electron } = require('playwright-core');
     electron = await _electron.launch({ executablePath: path.resolve('DeskBuddy.app/Contents/MacOS/DeskBuddy'), args: [`--user-data-dir=${root}`] });
     const page = await electron.firstWindow();
     await electron.evaluate(async ({ app }, input) => {
-      const fs = await import('node:fs');
+      const fs = process.getBuiltinModule('fs');
       const original = globalThis.fetch;
       app.getVersion = () => '0.0.0';
       globalThis.fetch = async (url, options) => {
