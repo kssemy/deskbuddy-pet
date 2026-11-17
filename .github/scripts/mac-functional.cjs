@@ -114,10 +114,8 @@ async function run() {
     const original = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
       const address = String(url);
-      if (address.includes('api.github.com/repos/kssemy/deskbuddy-pet/releases/latest'))
-        return new Response(JSON.stringify({ tag_name: 'v0.1.34', assets: [{
-          name: `DeskBuddy-mac-${process.arch}-0.1.34.zip`,
-          browser_download_url: 'https://example.invalid/test.zip' }] }), { status: 200 });
+      if (address.includes('api.github.com/repos/kssemy/deskbuddy-pet/releases'))
+        return new Response(JSON.stringify([]), { status: 200 });
       if (!address.includes('tgyfscvjnkaiykyfyzcc.supabase.co')) return original(url, options);
       let result = null;
       if (address.includes('/rpc/pet_register'))

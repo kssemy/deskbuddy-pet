@@ -430,9 +430,15 @@ function syncRemote() {
   return remoteSyncQueue;
 }
 async function latestRelease() {
-  const response = await fetch(RELEASE_API, { headers: { 'User-Agent': 'DeskBuddy' }, signal: AbortSignal.timeout(8000) });
+  const response = await fetch(RELEASE_API.replace(/\/latest$/, '?per_page=100'), { headers: { 'User-Agent': 'DeskBuddy' }, signal: AbortSignal.timeout(8000) });
   if (!response.ok) throw new Error('GitHub 응답 오류');
-  const release = await response.json();
+  const releases = await response.json();
+  const platform = process.platform === 'darwin' ? 'Mac' : process.platform === 'win32' ? 'Windows' : null;
+  if (!platform) throw new Error('지원하지 않는 운영체제예요.');
+  const release = releases.filter(item => !item.draft && !item.prerelease && /^v\d+\.\d+\.\d+$/.test(item.tag_name))
+    .sort((a, b) => b.tag_name.localeCompare(a.tag_name, undefined, { numeric: true }))
+    .find(item => item.assets?.some(asset => asset.name === `DeskBuddy-${platform}-${item.tag_name.slice(1)}.zip`));
+  if (!release) throw new Error('이 운영체제의 배포 파일이 아직 없어요.');
   const latest = String(release.tag_name || '').replace(/^v/, '');
   if (!/^\d+\.\d+\.\d+$/.test(latest)) throw new Error('버전 정보를 읽을 수 없어요.');
   const current = app.getVersion();
@@ -443,10 +449,26 @@ async function latestRelease() {
 let installingUpdate = false;
 async function installUpdate(release) {
   if (installingUpdate || !release.update || !release.asset) return;
-  if (process.platform === 'darwin') { await shell.openExternal(release.asset.browser_download_url); return; }
   installingUpdate = true;
   try {
     const folder = path.join(app.getPath('userData'), 'updates', `v${release.latest}`);
+    if (process.platform === 'darwin') {
+      fs.mkdirSync(folder, { recursive: true });
+      const zip = path.join(folder, 'download.zip');
+      await downloadVerified(release.asset, zip);
+      const bundle = path.join(folder, 'DeskBuddy.app');
+      await new Promise((resolve, reject) => execFile('/usr/bin/ditto', ['-x', '-k', zip, folder], error => error ? reject(error) : resolve()));
+      const installed = JSON.parse(fs.readFileSync(path.join(bundle, 'Contents', 'Resources', 'app', 'package.json'), 'utf8'));
+      if (installed.version !== release.latest) throw new Error('다운로드한 Mac 버전이 일치하지 않아요.');
+      fs.accessSync(path.join(bundle, 'Contents', 'MacOS', 'DeskBuddy'), fs.constants.X_OK);
+      fs.rmSync(zip, { force: true });
+      const userDataArgument = `--user-data-dir=${app.getPath('userData')}`;
+      app.once('will-quit', () => spawn('/bin/sh', ['-c',
+        'while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec /usr/bin/open -n "$2" --args "$3"',
+        'deskbuddy-update', String(process.pid), bundle, userDataArgument], { detached: true, stdio: 'ignore' }).unref());
+      app.quit();
+      return;
+    }
     const exe = path.join(folder, 'DeskBuddy.exe');
     if (!fs.existsSync(exe)) {
       fs.mkdirSync(folder, { recursive: true });
@@ -468,8 +490,8 @@ async function installUpdate(release) {
   } finally { installingUpdate = false; }
 }
 async function offerStartupUpdate() {
-  if (process.platform === 'darwin') { lastUpdateCheck = 0; await checkForRunningUpdate(); return; }
-  if (process.platform !== 'win32' || path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe') return;
+  if (!app.isPackaged || !['darwin', 'win32'].includes(process.platform)) return;
+  if (process.platform === 'win32' && path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe') return;
   try {
     const release = await latestRelease();
     if (!release.update || !release.asset) return;
