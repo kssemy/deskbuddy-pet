@@ -60,6 +60,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          name: mac-functional-${{ matrix.arch }}
+          path: functional.log
+      - name: Verify Mac updater restarts the downloaded app
+        run: node .github/scripts/mac-update.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
           name: mac-smoke-${{ matrix.arch }}
           path: |
             deskbuddy.log
