@@ -3,8 +3,8 @@ const path = require('node:path');
 const { _electron } = require('playwright-core');
 
 const bundle = path.resolve('DeskBuddy.app');
-const executablePath = path.join(bundle, 'Contents/MacOS/DeskBuddy');
-const appPath = path.join(bundle, 'Contents/Resources/app');
+const executablePath = process.platform === 'win32' ? path.resolve('windows-app/DeskBuddy.exe') : path.join(bundle, 'Contents/MacOS/DeskBuddy');
+const appPath = process.platform === 'win32' ? path.resolve('windows-app/resources/app') : path.join(bundle, 'Contents/Resources/app');
 const png = path.join(appPath, 'default-character.png');
 const jpg = path.resolve('.github/fixtures/character-test.jpg');
 let electron;
@@ -83,7 +83,7 @@ async function run() {
   console.log('PASS: monthly history');
 
   const settings = await openSettings();
-  assert.equal(await settings.locator('#autoLaunch').locator('..').isVisible(), false);
+  assert.equal(await settings.locator('#autoLaunch').locator('..').isVisible(), process.platform === 'win32');
   await settings.locator('#workStart').fill('08:30');
   await settings.locator('#saveSettings').click();
   assert.equal((await pet.evaluate(() => window.pet.load())).workStart, '08:30');

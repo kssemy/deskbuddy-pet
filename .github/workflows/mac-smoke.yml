@@ -11,6 +11,23 @@ permissions:
   contents: read
 
 jobs:
+  windows-protocol:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Download Windows app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" --pattern "DeskBuddy-Windows-*.zip"
+          Expand-Archive -Path "DeskBuddy-Windows-*.zip" -DestinationPath windows-app
+      - name: Exercise the same friend protocol on Windows
+        run: node .github/scripts/mac-functional.cjs
   smoke:
     strategy:
       fail-fast: false
