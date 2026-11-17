@@ -1,11 +1,13 @@
 # 일하는 캐릭터 시제품
 
-Windows에서 캐릭터가 투명한 창으로 바탕화면 위를 움직이는 테스트 버전입니다.
+Windows와 macOS에서 캐릭터가 바탕화면 위를 움직이는 앱입니다. 두 운영체제는 같은 서버의 친구 목록을 공유합니다.
 
 ## 다운로드
 
-- **Windows 간편 설치 · v0.1.40:** [DeskBuddy-Setup-Windows-0.1.40.exe](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.40/DeskBuddy-Setup-Windows-0.1.40.exe)
-- **Windows ZIP · v0.1.40:** [DeskBuddy-Windows-0.1.40.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.40/DeskBuddy-Windows-0.1.40.zip)
+- **Windows 간편 설치 · v0.1.41:** [DeskBuddy-Setup-Windows-0.1.41.exe](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.41/DeskBuddy-Setup-Windows-0.1.41.exe)
+- **Windows ZIP · v0.1.41:** [DeskBuddy-Windows-0.1.41.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.41/DeskBuddy-Windows-0.1.41.zip)
+
+- **Mac용 · Intel / Apple Silicon 공용:** [DeskBuddy-Mac-0.1.41.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.41/DeskBuddy-Mac-0.1.41.zip)
 
 [모든 버전 보기](https://github.com/kssemy/deskbuddy-pet/releases/latest)
 
@@ -53,3 +55,9 @@ Supabase에는 [supabase-pet.sql](supabase-pet.sql)과 [supabase-pet-schedule.sq
 
 설정의 연결 상태에는 현재 화면에 나타나는 친구 수가 함께 표시됩니다. 친구가 없으면 `나만 접속 중`, 서버 확인 중에는 `친구 확인 중…`으로 표시합니다.
 
+
+## 운영체제별 업데이트
+
+Windows는 Windows ZIP, Mac은 Mac ZIP이 존재하는 최신 정식 릴리스만 선택합니다. 한쪽 배포가 늦어도 다른 운영체제 파일을 받지 않습니다. Mac도 ZIP 검증과 버전 확인 후 기존 앱을 종료하고 새 앱을 실행하며 데이터를 유지합니다. 이전 Mac 버전은 이번 Mac ZIP을 한 번 직접 받아 실행해 주세요. Mac 빌드는 Apple 공증을 받지 않았으므로 최초 실행 시 macOS 보안 확인이 필요할 수 있습니다.
+
+GitHub Actions에서 Intel Mac, Apple Silicon Mac, Windows의 실제 앱과 공통 친구 응답 처리를 검사합니다. 친구 검사는 테스트 서버 응답을 사용하며 실제 사용자 계정 간 접속 검사를 대체하지 않습니다.
