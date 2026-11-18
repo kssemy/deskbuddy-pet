@@ -627,7 +627,7 @@ function togglePanel(mode = 'tasks') {
 function panelBounds(mode) {
   const { x, y } = petWindow.getBounds();
   const area = screen.getDisplayNearestPoint({ x: x + 120, y: y + 192 - data.size / 2 }).workArea;
-  const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'wardrobe' ? Math.min(420, area.width - 16) : mode === 'settings' ? 320 : 260;
+  const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'wardrobe' ? Math.min(420, area.width - 16) : mode === 'settings' ? 280 : 240;
   const height = Math.min(mode === 'tasks' ? 400 : mode === 'history' ? 650 : mode === 'wardrobe' ? 520 : mode === 'settings' ? 590 : 66, area.height - 16);
   const figureTop = y + 192 - data.size;
   const placement = figureTop - height - 8 >= area.y ? 'above' : 'below';
