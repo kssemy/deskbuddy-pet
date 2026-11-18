@@ -6,7 +6,7 @@ using System.Reflection;
 using System.Windows.Forms;
 
 class DeskBuddySetup {
-  const string Version = "0.1.42";
+  const string Version = "0.1.43";
 
   [STAThread]
   static int Main(string[] args) {
