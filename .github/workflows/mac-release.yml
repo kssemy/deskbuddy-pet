@@ -29,6 +29,8 @@ jobs:
           version="${version#v}"
           test "$(node -p 'require("./package.json").version')" = "$version"
           npx @electron/packager . DeskBuddy --platform=darwin --arch=universal --out=dist --overwrite --app-bundle-id=com.kssemy.deskbuddy
+          codesign --force --deep --sign - "dist/DeskBuddy-darwin-universal/DeskBuddy.app"
+          codesign --verify --deep --strict --verbose=4 "dist/DeskBuddy-darwin-universal/DeskBuddy.app"
           ditto -c -k --sequesterRsrc --keepParent "dist/DeskBuddy-darwin-universal/DeskBuddy.app" "DeskBuddy-Mac-$version.zip"
       - name: Upload macOS apps to release
         env:
