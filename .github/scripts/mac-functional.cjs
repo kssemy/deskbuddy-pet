@@ -83,6 +83,8 @@ async function run() {
   console.log('PASS: monthly history');
 
   const settings = await openSettings();
+  assert.equal(await settings.getByRole('tab').count(), 4);
+  await settings.screenshot({ path: 'settings-character.png' });
   await settings.getByRole('tab', { name: '앱 설정', exact: true }).click();
   assert.equal(await settings.locator('#autoLaunch').locator('..').isVisible(), process.platform === 'win32');
   await settings.getByRole('tab', { name: '근무시간', exact: true }).click();
@@ -132,6 +134,8 @@ async function run() {
   }, png);
   const login = await openSettings();
   await login.getByRole('tab', { name: '친구', exact: true }).click();
+  assert.equal(await login.locator('#loginName').getAttribute('placeholder'), '아이디');
+  await login.screenshot({ path: 'settings-login.png' });
   await login.locator('#loginName').fill('MacTester');
   await login.locator('#loginPin').fill('123456');
   await login.locator('#register').click();

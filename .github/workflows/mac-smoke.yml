@@ -79,6 +79,7 @@ jobs:
         with:
           name: mac-functional-${{ matrix.arch }}
           path: functional.log
+          # Screenshots are also included in the final artifact below.
       - name: Verify Mac updater restarts the downloaded app
         timeout-minutes: 4
         run: node .github/scripts/mac-update.cjs
@@ -90,3 +91,4 @@ jobs:
             deskbuddy.log
             desktop.png
             functional.log
+            settings-*.png
