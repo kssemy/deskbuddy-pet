@@ -18,3 +18,18 @@ jobs:
           codesign --verify --deep --strict --verbose=4 DeskBuddy.app 2>&1 || true
           spctl --assess --type execute --verbose=4 DeskBuddy.app 2>&1 || true
           /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' DeskBuddy.app/Contents/Info.plist || true
+      - name: Repair bundle signing and verify Finder-style launch
+        run: |
+          set -euo pipefail
+          codesign --force --deep --sign - DeskBuddy.app
+          codesign --verify --deep --strict --verbose=4 DeskBuddy.app
+          mkdir -p "$RUNNER_TEMP/finder-user-data"
+          open -n "$PWD/DeskBuddy.app" --args "--user-data-dir=$RUNNER_TEMP/finder-user-data"
+          sleep 20
+          test -f "$RUNNER_TEMP/finder-user-data/prototype.json"
+          pgrep -f "$PWD/DeskBuddy.app/Contents/MacOS/DeskBuddy"
+          ditto -c -k --sequesterRsrc --keepParent DeskBuddy.app DeskBuddy-Mac-signing-test.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mac-signing-test
+          path: DeskBuddy-Mac-signing-test.zip
