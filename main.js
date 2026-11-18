@@ -458,8 +458,10 @@ async function installUpdate(release) {
       await downloadVerified(release.asset, zip);
       const bundle = path.join(folder, 'DeskBuddy.app');
       await new Promise((resolve, reject) => execFile('/usr/bin/ditto', ['-x', '-k', zip, folder], error => error ? reject(error) : resolve()));
-      const installed = JSON.parse(fs.readFileSync(path.join(bundle, 'Contents', 'Resources', 'app', 'package.json'), 'utf8'));
-      if (installed.version !== release.latest) throw new Error('다운로드한 Mac 버전이 일치하지 않아요.');
+      const installedVersion = await new Promise((resolve, reject) => execFile('/usr/libexec/PlistBuddy',
+        ['-c', 'Print :CFBundleShortVersionString', path.join(bundle, 'Contents', 'Info.plist')],
+        (error, stdout) => error ? reject(error) : resolve(stdout.trim())));
+      if (installedVersion !== release.latest) throw new Error('다운로드한 Mac 버전이 일치하지 않아요.');
       fs.accessSync(path.join(bundle, 'Contents', 'MacOS', 'DeskBuddy'), fs.constants.X_OK);
       fs.rmSync(zip, { force: true });
       const userDataArgument = `--user-data-dir=${app.getPath('userData')}`;

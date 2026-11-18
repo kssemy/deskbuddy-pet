@@ -5,7 +5,7 @@ const { _electron } = require('playwright-core');
 const bundle = path.resolve('DeskBuddy.app');
 const executablePath = process.platform === 'win32' ? path.resolve('windows-app/DeskBuddy.exe') : path.join(bundle, 'Contents/MacOS/DeskBuddy');
 const appPath = process.platform === 'win32' ? path.resolve('windows-app/resources/app') : path.join(bundle, 'Contents/Resources/app');
-const png = path.join(appPath, 'default-character.png');
+const png = path.resolve('default-character.png');
 const jpg = path.resolve('.github/fixtures/character-test.jpg');
 let electron;
 
