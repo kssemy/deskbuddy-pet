@@ -1,0 +1,20 @@
+name: Audit downloaded Mac app signing
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: macos-15
+    steps:
+      - name: Download released app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.1.41 --repo "${{ github.repository }}" --pattern 'DeskBuddy-Mac-*.zip'
+          ditto -x -k DeskBuddy-Mac-*.zip .
+      - name: Inspect signing and Gatekeeper assessment
+        run: |
+          codesign -dvvv DeskBuddy.app 2>&1 || true
+          codesign --verify --deep --strict --verbose=4 DeskBuddy.app 2>&1 || true
+          spctl --assess --type execute --verbose=4 DeskBuddy.app 2>&1 || true
+          /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' DeskBuddy.app/Contents/Info.plist || true
