@@ -83,7 +83,9 @@ async function run() {
   console.log('PASS: monthly history');
 
   const settings = await openSettings();
+  await settings.getByRole('tab', { name: '앱 설정', exact: true }).click();
   assert.equal(await settings.locator('#autoLaunch').locator('..').isVisible(), process.platform === 'win32');
+  await settings.getByRole('tab', { name: '근무시간', exact: true }).click();
   await settings.locator('#workStart').fill('08:30');
   await settings.locator('#saveSettings').click();
   assert.equal((await pet.evaluate(() => window.pet.load())).workStart, '08:30');
@@ -129,6 +131,7 @@ async function run() {
     };
   }, png);
   const login = await openSettings();
+  await login.getByRole('tab', { name: '친구', exact: true }).click();
   await login.locator('#loginName').fill('MacTester');
   await login.locator('#loginPin').fill('123456');
   await login.locator('#register').click();
