@@ -227,7 +227,7 @@ function placeWindow(window, x, y) {
   }
 }
 function movePet() {
-  if (ownPinned || paused || dragging || panelWindow || Date.now() < moveErrorUntil || !petWindow || petWindow.isDestroyed()) return;
+  if (ownPinned || dragging || ownDragStart || panelWindow || Date.now() < moveErrorUntil || !petWindow || petWindow.isDestroyed()) return;
   const cursor = screen.getCursorScreenPoint();
   const window = petWindow.getBounds();
   const visual = ownVisual();

@@ -43,6 +43,14 @@ async function run() {
   await pet.locator('#figure').waitFor({ state: 'visible' });
   assert.match(await pet.locator('#workStatus').textContent(), /\S/);
   console.log('PASS: own character and work status');
+  const bounds = () => electron.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('pet.html')).getBounds());
+  await pet.evaluate(() => window.pet.hover(true));
+  const beforeMove = await bounds();
+  await pet.mouse.move(0, 0);
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  const afterMove = await bounds();
+  assert(beforeMove.x !== afterMove.x || beforeMove.y !== afterMove.y, 'Native character window must move even after a stale hover event');
+  console.log('PASS: native automatic movement and stale hover recovery');
 
   await pet.locator('#figure').click({ force: true });
   const tasks = await windowFor('panel.html?mode=tasks');
