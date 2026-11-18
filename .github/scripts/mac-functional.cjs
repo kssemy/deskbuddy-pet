@@ -92,6 +92,14 @@ async function run() {
 
   const settings = await openSettings();
   assert.equal(await settings.getByRole('tab').count(), 4);
+  for (const label of ['캐릭터', '근무시간', '친구', '앱 설정']) {
+    await settings.getByRole('tab', { name: label, exact: true }).click();
+    assert(await settings.evaluate(() => {
+      const page = [...document.querySelectorAll('.settingsPage')].find(el => !el.hidden);
+      return page.scrollWidth <= page.clientWidth + 1 && document.querySelector('#settingsTabs').scrollWidth <= document.querySelector('#settingsTabs').clientWidth + 1;
+    }), `Compact ${label} tab must fit horizontally`);
+  }
+  await settings.getByRole('tab', { name: '캐릭터', exact: true }).click();
   await settings.screenshot({ path: 'settings-character.png' });
   await settings.getByRole('tab', { name: '앱 설정', exact: true }).click();
   assert.equal(await settings.locator('#autoLaunch').locator('..').isVisible(), process.platform === 'win32');
