@@ -400,7 +400,7 @@ function showRemotePets(rows, fullSnapshot = true) {
     const observed = observedPresence.get(row.member_id);
     const now = Date.now();
     const changed = observed && observed.stamp !== row.updated_at;
-    const seenAt = changed ? now : observed?.seenAt ?? (Math.abs(now - Date.parse(row.updated_at)) <= 40000 ? now : 0);
+    const seenAt = !fullSnapshot || changed ? now : observed?.seenAt ?? (Math.abs(now - Date.parse(row.updated_at)) <= 40000 ? now : 0);
     observedPresence.set(row.member_id, { stamp: row.updated_at, seenAt });
     if (!seenAt || now - seenAt > 60000) continue;
     active.add(row.member_id);

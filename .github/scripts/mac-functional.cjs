@@ -27,7 +27,7 @@ async function openSettings() {
         template.find(item => item.label === '설정').click();
         return { popup() {} };
       };
-      BrowserWindow.getAllWindows().find(item => item.webContents.getURL().includes('pet.html'))
+      BrowserWindow.getAllWindows().find(item => !item.isDestroyed() && !item.webContents.isDestroyed() && item.webContents.getURL().includes('pet.html'))
         .webContents.emit('context-menu');
     } finally { Menu.buildFromTemplate = build; }
   });
