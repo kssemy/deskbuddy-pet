@@ -8,7 +8,7 @@ if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid release tag');
   const response = await fetch(base + '/realtime/v1/api/broadcast', {
     method: 'POST', signal: AbortSignal.timeout(15000),
     headers: { apikey: key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages: [{ topic: 'deskbuddy-releases', event: 'release', payload: { version }, private: false }] })
+    body: JSON.stringify({ messages: [{ topic: 'deskbuddy-events', event: 'deskbuddy-event', payload: { type: 'release', version }, private: false }] })
   });
   if (!response.ok) throw new Error('Release notification failed: ' + response.status);
   console.log('Release notification sent:', version);

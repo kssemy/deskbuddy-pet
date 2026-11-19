@@ -5,7 +5,7 @@ const { pathToFileURL } = require('node:url');
 const { randomUUID, createHash } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { downloadVerified } = require('./update-download');
-const { listenForReleases } = require('./release-events');
+const { listenForEvents, broadcastDeskBuddyEvent } = require('./release-events');
 const { step } = require('./motion');
 const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
@@ -48,6 +48,7 @@ let remoteTimer;
 let stopReleaseEvents;
 let lastReleaseHint = '';
 let remoteSyncQueue = null;
+let lastPublishedPresence = '';
 const observedPresence = new Map();
 let poseSyncQueue = Promise.resolve();
 let reaction = null;
@@ -391,7 +392,7 @@ async function refreshFriendPoses(id, item, revision) {
   } catch { /* 다음 동기화 때 재시도 */ }
   finally { if (item.loadingPoseRevision === revision) item.loadingPoseRevision = null; }
 }
-function showRemotePets(rows) {
+function showRemotePets(rows, fullSnapshot = true) {
   const active = new Set();
   const area = screen.getPrimaryDisplay().workArea;
   for (const row of rows) {
@@ -419,9 +420,13 @@ function showRemotePets(rows) {
     } else { item.window.webContents.send('remote-update', { ...row, displaySize: data.size }); showReaction(row, item.window); }
     if (item.window.webContents.isLoading() === false) void refreshFriendPoses(row.member_id, item, row.public_tasks?.find(task => task.type === 'poses')?.revision || '');
   }
-  const presentIds = new Set(rows.map(row => row.member_id));
-  for (const id of observedPresence.keys()) if (!presentIds.has(id)) observedPresence.delete(id);
-  for (const [id, item] of remoteWindows) if (!active.has(id)) { item.window.close(); remoteWindows.delete(id); meeting.delete(id); }
+  if (fullSnapshot) {
+    const presentIds = new Set(rows.map(row => row.member_id));
+    for (const id of observedPresence.keys()) if (!presentIds.has(id)) observedPresence.delete(id);
+    for (const [id, item] of remoteWindows) if (!active.has(id)) { item.window.close(); remoteWindows.delete(id); meeting.delete(id); }
+  } else for (const row of rows) if (row.member_id !== remoteSession?.id && !active.has(row.member_id)) {
+    remoteWindows.get(row.member_id)?.window.close(); remoteWindows.delete(row.member_id); observedPresence.delete(row.member_id); meeting.delete(row.member_id);
+  }
 }
 function showReaction(row, window) {
   const events = Array.isArray(row.public_tasks) ? row.public_tasks.filter(task => task && task.type && Date.now() - Number(task.createdAt) < 30000) : [];
@@ -538,30 +543,36 @@ async function sendRemote() {
   if (!remoteSession) return;
   const session = remoteSession;
   let publishError;
+  let changed = false;
   try {
     const state = workState(new Date(), data);
+    const payload = { member_id: session.id, name: session.name, avatar: await avatarData(), speech: data.speech || '',
+      status: state,
+      public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
+        .map(task => ({ text: task.text, done: task.done })), { type: 'poses', revision: data.poseRevision || '', intervalSeconds: poseIntervalSecondsFor(data.currentCharacterId) },
+        { type: 'glow-color', color: data.glowColor },
+        ...(data.speechExpiresAt ? [{ type: 'speech-expiry', expiresAt: data.speechExpiresAt }] : []),
+        ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])] };
+    const snapshot = JSON.stringify(payload);
+    changed = snapshot !== lastPublishedPresence;
     await remoteApi('/pet_presence?on_conflict=member_id', { method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ member_id: remoteSession.id, name: remoteSession.name, avatar: await avatarData(), speech: data.speech || '',
-        status: state,
-        public_tasks: [...(data.shareTodos ? (data.tasks || []).filter(task => task.pinned || !task.done || task.completedAt === today()) : [])
-          .map(task => ({ text: task.text, done: task.done })), { type: 'poses', revision: data.poseRevision || '', intervalSeconds: poseIntervalSecondsFor(data.currentCharacterId) },
-          { type: 'glow-color', color: data.glowColor },
-          ...(data.speechExpiresAt ? [{ type: 'speech-expiry', expiresAt: data.speechExpiresAt }] : []),
-          ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
+      body: JSON.stringify({ ...payload, updated_at: new Date().toISOString() }) });
+    lastPublishedPresence = snapshot;
+    if (changed) broadcastDeskBuddyEvent({ member_id: session.id });
   } catch (error) { publishError = error; }
   if (remoteSession !== session) return;
-  try {
-    const rows = await remoteApi('/pet_presence?select=*');
+  if (changed) try {
+    const rows = await remoteApi('/pet_presence?select=*&member_id=eq.' + encodeURIComponent(session.id));
     if (remoteSession !== session) return;
-    const previousCount = remoteWindows.size;
-    showRemotePets(rows || []);
-    const needsUpdate = !remoteChecked || previousCount !== remoteWindows.size || !!remoteError;
+    showRemotePets(rows || [], false);
     remoteChecked = true;
     remoteError = publishError ? `내 접속 상태 전송 재시도 중: ${publishError.message}` : '';
-    if (needsUpdate || publishError) broadcast();
+    broadcast();
   } catch (error) { remoteChecked = false; remoteError = error.message; broadcast(); }
+  else if (publishError) { remoteChecked = false; remoteError = publishError.message; broadcast(); }
 }
+
 function makeWindow(file, options, query) {
   const win = new BrowserWindow({
     show: false, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
@@ -719,15 +730,18 @@ app.whenReady().then(() => {
   if (updateCompleted) showUpdateNotice(app.getVersion(), true);
   setInterval(refreshAllOnTop, 3000);
   movement = setInterval(() => { movePet(); moveRemotePets(); checkMeetings(); }, 60);
-  remoteTimer = setInterval(syncRemote, 10000);
+  remoteTimer = setInterval(syncRemote, 30000);
   if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); void queuePosePublish().catch(() => {}); }
   void offerStartupUpdate();
-  if (app.isPackaged) stopReleaseEvents = listenForReleases(REMOTE_URL.replace('/rest/v1', ''), REMOTE_KEY, version => {
-    if (version === lastReleaseHint || version.localeCompare(app.getVersion(), undefined, { numeric: true }) <= 0) return;
-    lastReleaseHint = version;
-    // Broadcast is only a hint: GitHub remains the authority for versions and download URLs.
-    void checkForRunningUpdate(true);
-  }, () => { void checkForRunningUpdate(); });
+  if (app.isPackaged) stopReleaseEvents = listenForEvents(REMOTE_URL.replace('/rest/v1', ''), REMOTE_KEY, event => {
+    if (event.type === 'release' && typeof event.version === 'string' && /^\d+\.\d+\.\d+$/.test(event.version) &&
+        event.version.localeCompare(app.getVersion(), undefined, { numeric: true }) > 0 && event.version !== lastReleaseHint) {
+      lastReleaseHint = event.version;
+      void checkForRunningUpdate(true);
+    }
+    if (event.type === 'presence' && event.member_id && event.member_id !== remoteSession?.id)
+      void remoteApi('/pet_presence?select=*&member_id=eq.' + encodeURIComponent(event.member_id)).then(rows => showRemotePets(rows || [], false)).catch(() => {});
+  }, () => { if (remoteSession) void remoteApi('/pet_presence?select=*').then(rows => showRemotePets(rows || [])).catch(() => {}); });
 });
 
 ipcMain.handle('load', () => publicData());
