@@ -4,10 +4,10 @@ Windows와 macOS에서 캐릭터가 바탕화면 위를 움직이는 앱입니�
 
 ## 다운로드
 
-- **Windows 간편 설치 · v0.1.41:** [DeskBuddy-Setup-Windows-0.1.41.exe](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.41/DeskBuddy-Setup-Windows-0.1.41.exe)
-- **Windows ZIP · v0.1.41:** [DeskBuddy-Windows-0.1.41.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.41/DeskBuddy-Windows-0.1.41.zip)
+- **Windows 간편 설치 · v0.1.44:** [DeskBuddy-Setup-Windows-0.1.44.exe](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.44/DeskBuddy-Setup-Windows-0.1.44.exe)
+- **Windows ZIP · v0.1.44:** [DeskBuddy-Windows-0.1.44.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.44/DeskBuddy-Windows-0.1.44.zip)
 
-- **Mac용 · Intel / Apple Silicon 공용:** [DeskBuddy-Mac-0.1.41.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.41/DeskBuddy-Mac-0.1.41.zip)
+- **Mac용 · Apple Silicon (M칩):** [DeskBuddy-Mac-0.1.44.zip](https://github.com/kssemy/deskbuddy-pet/releases/download/v0.1.44/DeskBuddy-Mac-0.1.44.zip)
 
 [모든 버전 보기](https://github.com/kssemy/deskbuddy-pet/releases/latest)
 

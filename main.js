@@ -44,7 +44,8 @@ let remoteSession;
 let remoteError = '';
 let remoteChecked = false;
 let remoteTimer;
-let remoteSyncQueue = Promise.resolve();
+let remoteSyncQueue = null;
+const observedPresence = new Map();
 let poseSyncQueue = Promise.resolve();
 let reaction = null;
 let pendingRelease;
@@ -297,7 +298,7 @@ function checkMeetings() {
   }
 }
 async function remoteApi(route, options = {}) {
-  const response = await fetch(REMOTE_URL + route, { ...options, headers: {
+  const response = await fetch(REMOTE_URL + route, { ...options, signal: options.signal || AbortSignal.timeout(15000), cache: 'no-store', headers: {
     apikey: REMOTE_KEY, Authorization: 'Bearer ' + REMOTE_KEY,
     'Content-Type': 'application/json', 'x-pet-session': remoteSession?.token || '',
     ...options.headers
@@ -391,7 +392,13 @@ function showRemotePets(rows) {
   const active = new Set();
   const area = screen.getPrimaryDisplay().workArea;
   for (const row of rows) {
-    if (row.member_id === remoteSession?.id || Date.now() - Date.parse(row.updated_at) > 40000) continue;
+    if (row.member_id === remoteSession?.id) continue;
+    const observed = observedPresence.get(row.member_id);
+    const now = Date.now();
+    const changed = observed && observed.stamp !== row.updated_at;
+    const seenAt = changed ? now : observed?.seenAt ?? (Math.abs(now - Date.parse(row.updated_at)) <= 40000 ? now : 0);
+    observedPresence.set(row.member_id, { stamp: row.updated_at, seenAt });
+    if (!seenAt || now - seenAt > 60000) continue;
     active.add(row.member_id);
     let item = remoteWindows.get(row.member_id);
     if (!item) {
@@ -409,6 +416,8 @@ function showRemotePets(rows) {
     } else { item.window.webContents.send('remote-update', { ...row, displaySize: data.size }); showReaction(row, item.window); }
     if (item.window.webContents.isLoading() === false) void refreshFriendPoses(row.member_id, item, row.public_tasks?.find(task => task.type === 'poses')?.revision || '');
   }
+  const presentIds = new Set(rows.map(row => row.member_id));
+  for (const id of observedPresence.keys()) if (!presentIds.has(id)) observedPresence.delete(id);
   for (const [id, item] of remoteWindows) if (!active.has(id)) { item.window.close(); remoteWindows.delete(id); meeting.delete(id); }
 }
 function showReaction(row, window) {
@@ -426,7 +435,7 @@ function showReaction(row, window) {
   }
 }
 function syncRemote() {
-  remoteSyncQueue = remoteSyncQueue.then(sendRemote, sendRemote);
+  if (!remoteSyncQueue) remoteSyncQueue = sendRemote().finally(() => { remoteSyncQueue = null; });
   return remoteSyncQueue;
 }
 async function latestRelease() {
@@ -524,6 +533,8 @@ function showUpdateNotice(version, done = false) {
 }
 async function sendRemote() {
   if (!remoteSession) return;
+  const session = remoteSession;
+  let publishError;
   try {
     const state = workState(new Date(), data);
     await remoteApi('/pet_presence?on_conflict=member_id', { method: 'POST',
@@ -535,13 +546,17 @@ async function sendRemote() {
           { type: 'glow-color', color: data.glowColor },
           ...(data.speechExpiresAt ? [{ type: 'speech-expiry', expiresAt: data.speechExpiresAt }] : []),
           ...(reaction && Date.now() - reaction.createdAt < 30000 ? [reaction] : [])], updated_at: new Date().toISOString() }) });
+  } catch (error) { publishError = error; }
+  if (remoteSession !== session) return;
+  try {
     const rows = await remoteApi('/pet_presence?select=*');
+    if (remoteSession !== session) return;
     const previousCount = remoteWindows.size;
     showRemotePets(rows || []);
     const needsUpdate = !remoteChecked || previousCount !== remoteWindows.size || !!remoteError;
     remoteChecked = true;
-    remoteError = '';
-    if (needsUpdate) broadcast();
+    remoteError = publishError ? `내 접속 상태 전송 재시도 중: ${publishError.message}` : '';
+    if (needsUpdate || publishError) broadcast();
   } catch (error) { remoteChecked = false; remoteError = error.message; broadcast(); }
 }
 function makeWindow(file, options, query) {
@@ -628,16 +643,16 @@ function panelBounds(mode) {
   const { x, y } = petWindow.getBounds();
   const area = screen.getDisplayNearestPoint({ x: x + 120, y: y + 192 - data.size / 2 }).workArea;
   const width = mode === 'history' ? Math.min(620, area.width - 16) : mode === 'wardrobe' ? Math.min(420, area.width - 16) : mode === 'settings' ? 280 : 240;
-  const height = Math.min(mode === 'tasks' ? 400 : mode === 'history' ? 650 : mode === 'wardrobe' ? 520 : mode === 'settings' ? 590 : 66, area.height - 16);
+  const height = Math.min(mode === 'tasks' ? 400 : mode === 'history' ? 650 : mode === 'wardrobe' ? 520 : mode === 'settings' ? 400 : 66, area.height - 16);
   const figureTop = y + 192 - data.size;
   const placement = figureTop - height - 8 >= area.y ? 'above' : 'below';
   return { width, height, placement,
     x: Math.round(Math.max(area.x, Math.min(x + 120 - width / 2, area.x + area.width - width))),
     y: Math.round(Math.max(area.y, Math.min(placement === 'above' ? figureTop - height - 8 : y + 200, area.y + area.height - height))) };
 }
-function resizeTaskPanel(height) {
-  if (!panelWindow || panelWindow.isDestroyed() || panelMode !== 'tasks') return;
-  const requested = Math.max(200, Math.round(Number(height)));
+function resizePanelWindow(height) {
+  if (!panelWindow || panelWindow.isDestroyed() || !['tasks', 'settings'].includes(panelMode)) return;
+  const requested = Math.max(panelMode === 'settings' ? 240 : 200, Math.round(Number(height)));
   if (!Number.isFinite(requested)) return;
   const bounds = panelWindow.getBounds();
   const area = screen.getDisplayMatching(bounds).workArea;
@@ -897,7 +912,7 @@ ipcMain.on('poke-friend', event => {
   }
 });
 ipcMain.on('resize-panel', (event, height) => {
-  if (event.sender === panelWindow?.webContents) resizeTaskPanel(height);
+  if (event.sender === panelWindow?.webContents) resizePanelWindow(height);
 });
 ipcMain.handle('connect-pet', async (_event, name, pin, register = false) => {
   name = String(name || '').trim();
