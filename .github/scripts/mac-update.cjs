@@ -33,7 +33,14 @@ const { _electron } = require('playwright-core');
     }, { version, zip });
     console.log('Update fixture installed');
     const closed = electron.waitForEvent('close', { timeout: 120000 });
-    await page.evaluate(() => { window.pet.installUpdate(); });
+    await electron.evaluate(({ BrowserWindow }) => {
+      const now = Date.now;
+      Date.now = () => now() + 120000;
+      BrowserWindow.getAllWindows().find(win => win.webContents.getURL().includes('pet.html')).emit('focus');
+    });
+    const notice = electron.windows().find(page => page.url().includes('update.html')) ||
+      await electron.waitForEvent('window', { predicate: page => page.url().includes('update.html') });
+    await notice.locator('#restart').click();
     console.log('Update requested');
     await closed;
     electron = null;
