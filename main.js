@@ -44,6 +44,7 @@ let remoteSession;
 let remoteError = '';
 let remoteChecked = false;
 let remoteTimer;
+let updateTimer;
 let remoteSyncQueue = null;
 const observedPresence = new Map();
 let poseSyncQueue = Promise.resolve();
@@ -719,6 +720,7 @@ app.whenReady().then(() => {
   remoteTimer = setInterval(syncRemote, 10000);
   if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); void queuePosePublish().catch(() => {}); }
   void offerStartupUpdate();
+  updateTimer = setInterval(() => { void checkForRunningUpdate(); }, 30 * 60 * 1000);
 });
 
 ipcMain.handle('load', () => publicData());
@@ -1012,6 +1014,7 @@ app.on('before-quit', event => {
   clearInterval(movement);
   clearInterval(workTimer);
   clearInterval(remoteTimer);
+  clearInterval(updateTimer);
   if (activeSession) { activeSession.endedAt = Date.now(); activeSession.lastSeenAt = activeSession.endedAt; saveData(); activeSession = null; }
 });
 app.on('window-all-closed', () => app.quit());
