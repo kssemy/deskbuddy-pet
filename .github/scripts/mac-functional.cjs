@@ -137,13 +137,17 @@ async function run() {
       if (address.includes('api.github.com/repos/kssemy/deskbuddy-pet/releases'))
         return new Response(JSON.stringify([]), { status: 200 });
       if (!address.includes('tgyfscvjnkaiykyfyzcc.supabase.co')) return original(url, options);
+      if (address.includes('/pet_presence?on_conflict=')) {
+        if (!options.signal) throw new Error('Presence request needs a timeout');
+        return new Response('temporary upload failure', { status: 503 });
+      }
       let result = null;
       if (address.includes('/rpc/pet_register'))
         result = { member_id: 'p_mac_test_self', name: 'MacTester', session_token: 'mock-session' };
       else if (address.includes('/pet_presence?select='))
         result = [{ member_id: 'p_mac_test_friend', name: 'Friend', avatar, speech: 'Hello friend',
           status: '01:23', public_tasks: [{ text: 'Mock friend task', done: false }],
-          updated_at: new Date().toISOString() }];
+          updated_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() }];
       else if (address.includes('/pet_schedule?select=') || address.includes('/pet_poses?select=')) result = [];
       return new Response(result === null ? '' : JSON.stringify(result), { status: 200 });
     };
@@ -170,7 +174,7 @@ async function run() {
   const friendClosed = friend.waitForEvent('close');
   await login.locator('#disconnect').click();
   await friendClosed;
-  console.log('PASS: mocked friend sign-in, speech, todo, disconnect');
+  console.log('PASS: friend sign-in with failed upload and clock skew, speech, todo, disconnect');
 
   console.log('PASS: released app functional checks');
 }
