@@ -559,7 +559,7 @@ async function sendRemote() {
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ ...payload, updated_at: new Date().toISOString() }) });
     lastPublishedPresence = snapshot;
-    if (changed) broadcastDeskBuddyEvent({ member_id: session.id });
+    broadcastDeskBuddyEvent({ type: changed ? 'presence' : 'heartbeat', member_id: session.id });
   } catch (error) { publishError = error; }
   if (remoteSession !== session) return;
   if (changed) try {
@@ -741,6 +741,10 @@ app.whenReady().then(() => {
     }
     if (event.type === 'presence' && event.member_id && event.member_id !== remoteSession?.id)
       void remoteApi('/pet_presence?select=*&member_id=eq.' + encodeURIComponent(event.member_id)).then(rows => showRemotePets(rows || [], false)).catch(() => {});
+    if (event.type === 'heartbeat' && event.member_id && remoteWindows.has(event.member_id)) {
+      const observed = observedPresence.get(event.member_id);
+      if (observed) observed.seenAt = Date.now();
+    }
   }, () => { if (remoteSession) void remoteApi('/pet_presence?select=*').then(rows => showRemotePets(rows || [])).catch(() => {}); });
 });
 
