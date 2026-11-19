@@ -17,6 +17,8 @@ const { _electron } = require('playwright-core');
     electron.process().stderr.on('data', chunk => process.stderr.write(chunk));
     console.log('Update test app launched');
     const page = await electron.firstWindow();
+    // Let the real startup release request finish (its timeout is eight seconds) before mocking versions.
+    await new Promise(resolve => setTimeout(resolve, 9000));
     await electron.evaluate(async ({ app, dialog }, input) => {
       dialog.showMessageBox = async options => { console.error('UPDATE DIALOG:', options); return { response: 1 }; };
       const fs = process.getBuiltinModule('fs');
