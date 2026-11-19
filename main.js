@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 const { randomUUID, createHash } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { downloadVerified } = require('./update-download');
+const { listenForReleases } = require('./release-events');
 const { step } = require('./motion');
 const { workState } = require('./worktime');
 const { charactersMeet } = require('./meeting');
@@ -44,7 +45,8 @@ let remoteSession;
 let remoteError = '';
 let remoteChecked = false;
 let remoteTimer;
-let updateTimer;
+let stopReleaseEvents;
+let lastReleaseHint = '';
 let remoteSyncQueue = null;
 const observedPresence = new Map();
 let poseSyncQueue = Promise.resolve();
@@ -510,9 +512,9 @@ async function offerStartupUpdate() {
     await installUpdate(release);
   } catch { /* 인터넷이 없어도 기존 앱은 그대로 사용합니다. */ }
 }
-async function checkForRunningUpdate() {
+async function checkForRunningUpdate(force = false) {
   if (!app.isPackaged || (process.platform === 'win32' && path.basename(process.execPath).toLowerCase() !== 'deskbuddy.exe') || installingUpdate ||
-      Date.now() - lastUpdateCheck < 60 * 1000) return;
+      (!force && Date.now() - lastUpdateCheck < 60 * 1000)) return;
   lastUpdateCheck = Date.now();
   try {
     const release = await latestRelease();
@@ -720,7 +722,12 @@ app.whenReady().then(() => {
   remoteTimer = setInterval(syncRemote, 10000);
   if (remoteSession) { void loadAccountSchedule().catch(() => {}); syncRemote(); void queuePosePublish().catch(() => {}); }
   void offerStartupUpdate();
-  updateTimer = setInterval(() => { void checkForRunningUpdate(); }, 30 * 60 * 1000);
+  if (app.isPackaged) stopReleaseEvents = listenForReleases(REMOTE_URL.replace('/rest/v1', ''), REMOTE_KEY, version => {
+    if (version === lastReleaseHint || version.localeCompare(app.getVersion(), undefined, { numeric: true }) <= 0) return;
+    lastReleaseHint = version;
+    // Broadcast is only a hint: GitHub remains the authority for versions and download URLs.
+    void checkForRunningUpdate(true);
+  }, () => { void checkForRunningUpdate(); });
 });
 
 ipcMain.handle('load', () => publicData());
@@ -1014,7 +1021,7 @@ app.on('before-quit', event => {
   clearInterval(movement);
   clearInterval(workTimer);
   clearInterval(remoteTimer);
-  clearInterval(updateTimer);
+  stopReleaseEvents?.();
   if (activeSession) { activeSession.endedAt = Date.now(); activeSession.lastSeenAt = activeSession.endedAt; saveData(); activeSession = null; }
 });
 app.on('window-all-closed', () => app.quit());
