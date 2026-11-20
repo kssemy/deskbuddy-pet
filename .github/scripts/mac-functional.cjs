@@ -147,7 +147,7 @@ async function run() {
       else if (address.includes('/pet_presence?select='))
         result = [{ member_id: 'p_mac_test_friend', name: 'Friend', avatar, speech: 'Hello friend',
           status: '01:23', public_tasks: [{ text: 'Mock friend task', done: false }],
-          updated_at: new Date(Date.now() - 5 * 60 * 1000).toISOString() }];
+          updated_at: new Date().toISOString() }];
       else if (address.includes('/pet_schedule?select=') || address.includes('/pet_poses?select=')) result = [];
       return new Response(result === null ? '' : JSON.stringify(result), { status: 200 });
     };
@@ -182,3 +182,4 @@ async function run() {
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (electron) await electron.close().catch(() => {});
 });
+

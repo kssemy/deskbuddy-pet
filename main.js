@@ -446,6 +446,15 @@ function syncRemote() {
   if (!remoteSyncQueue) remoteSyncQueue = sendRemote().finally(() => { remoteSyncQueue = null; });
   return remoteSyncQueue;
 }
+let friendSnapshotSession = null;
+async function refreshFriends() {
+  const session = remoteSession;
+  if (!session) return;
+  const rows = await remoteApi('/pet_presence?select=*');
+  if (remoteSession !== session) return;
+  showRemotePets(rows || []);
+  friendSnapshotSession = session;
+}
 async function latestRelease() {
   const response = await fetch(RELEASE_API.replace(/\/latest$/, '?per_page=100'), { headers: { 'User-Agent': 'DeskBuddy' }, signal: AbortSignal.timeout(8000) });
   if (!response.ok) throw new Error('GitHub 응답 오류');
@@ -562,6 +571,10 @@ async function sendRemote() {
     broadcastDeskBuddyEvent({ type: changed ? 'presence' : 'heartbeat', member_id: session.id });
   } catch (error) { publishError = error; }
   if (remoteSession !== session) return;
+  if (friendSnapshotSession !== session) {
+    try { await refreshFriends(); }
+    catch (error) { remoteChecked = false; remoteError = error.message; broadcast(); return; }
+  }
   if (changed) try {
     const rows = await remoteApi('/pet_presence?select=*&member_id=eq.' + encodeURIComponent(session.id));
     if (remoteSession !== session) return;
@@ -741,11 +754,13 @@ app.whenReady().then(() => {
     }
     if (event.type === 'presence' && event.member_id && event.member_id !== remoteSession?.id)
       void remoteApi('/pet_presence?select=*&member_id=eq.' + encodeURIComponent(event.member_id)).then(rows => showRemotePets(rows || [], false)).catch(() => {});
+    if (event.type === 'heartbeat' && event.member_id && event.member_id !== remoteSession?.id && !remoteWindows.has(event.member_id))
+      void remoteApi('/pet_presence?select=*&member_id=eq.' + encodeURIComponent(event.member_id)).then(rows => showRemotePets(rows || [], false)).catch(() => {});
     if (event.type === 'heartbeat' && event.member_id && remoteWindows.has(event.member_id)) {
       const observed = observedPresence.get(event.member_id);
       if (observed) observed.seenAt = Date.now();
     }
-  }, () => { if (remoteSession) void remoteApi('/pet_presence?select=*').then(rows => showRemotePets(rows || [])).catch(() => {}); });
+  }, () => { friendSnapshotSession = null; void refreshFriends().catch(() => {}); });
 });
 
 ipcMain.handle('load', () => publicData());
