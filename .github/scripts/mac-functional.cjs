@@ -87,7 +87,9 @@ async function run() {
   await pet.evaluate(() => window.pet.openHistory());
   const history = await windowFor('history.html');
   await history.getByText('Mac functional task').first().waitFor();
+  const historyClosed = history.waitForEvent('close');
   await history.locator('#close').click();
+  await historyClosed;
   console.log('PASS: monthly history');
 
   const settings = await openSettings();
@@ -126,7 +128,9 @@ async function run() {
   assert.equal((await pet.evaluate(() => window.pet.load())).poses.length, 1);
   await wardrobe.locator('#poseGrid .delete').first().click();
   assert.equal((await pet.evaluate(() => window.pet.load())).poses.length, 0);
+  const wardrobeClosed = wardrobe.waitForEvent('close');
   await wardrobe.locator('#close').click();
+  await wardrobeClosed;
   console.log('PASS: JPG character and pose upload/deletion');
 
   await electron.evaluate(({ nativeImage }, file) => {
@@ -182,4 +186,5 @@ async function run() {
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (electron) await electron.close().catch(() => {});
 });
+
 
