@@ -301,12 +301,45 @@ function checkMeetings() {
     void syncRemote();
   }
 }
-async function remoteApi(route, options = {}) {
+let sessionRecovery;
+async function recoverRemoteSession(session) {
+  if (remoteSession !== session) return;
+  if (!sessionRecovery) sessionRecovery = (async () => {
+    if (!session.pin) throw Object.assign(new Error('로그인이 만료됐어요. 아이디와 PIN으로 한 번 다시 로그인해 주세요.'), { loginRequired: true });
+    const response = await fetch(REMOTE_URL + '/rpc/pet_login', {
+      method: 'POST', signal: AbortSignal.timeout(15000),
+      headers: { apikey: REMOTE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_name: session.name, p_pin: session.pin })
+    });
+    if (!response.ok) throw new Error('로그인 서버 연결을 복구하지 못했어요. 잠시 후 다시 시도해 주세요.');
+    const result = await response.json();
+    if (result.error || result.member_id !== session.id || !result.session_token)
+      throw Object.assign(new Error('로그인을 다시 확인해 주세요. 아이디와 PIN을 입력해 주세요.'), { loginRequired: true });
+    if (remoteSession !== session) return;
+    session.token = result.session_token;
+    saveRemoteSession();
+  })().finally(() => { sessionRecovery = null; });
+  return sessionRecovery;
+}
+async function remoteApi(route, options = {}, retry = true) {
+  const session = remoteSession;
   const response = await fetch(REMOTE_URL + route, { ...options, signal: options.signal || AbortSignal.timeout(15000), cache: 'no-store', headers: {
     apikey: REMOTE_KEY, Authorization: 'Bearer ' + REMOTE_KEY,
     'Content-Type': 'application/json', 'x-pet-session': remoteSession?.token || '',
     ...options.headers
   } });
+  if (response.status === 401 && session && retry) {
+    try { await recoverRemoteSession(session); }
+    catch (error) {
+      if (remoteSession === session && error.loginRequired) {
+        remoteSession = null; saveRemoteSession(); remoteChecked = false;
+        remoteError = error.message; broadcast();
+      }
+      throw error;
+    }
+    if (remoteSession === session) return remoteApi(route, options, false);
+    throw new Error('다시 로그인해 주세요.');
+  }
   if (!response.ok) throw new Error(response.status === 404 ? 'Supabase에 캐릭터 테이블을 먼저 설치해 주세요.' : `Supabase 오류 (${response.status})`);
   const body = await response.text();
   return body ? JSON.parse(body) : null;
@@ -966,7 +999,7 @@ ipcMain.handle('connect-pet', async (_event, name, pin, register = false) => {
   if (!response.ok) throw new Error('캐릭터 계정 연결에 실패했습니다.');
   const result = await response.json();
   if (result.error) throw new Error(result.error);
-  remoteSession = { id: result.member_id, name: result.name, token: result.session_token };
+  remoteSession = { id: result.member_id, name: result.name, token: result.session_token, pin };
   saveRemoteSession();
   remoteChecked = false;
   remoteError = '';
